@@ -8,7 +8,7 @@
 
 **Strategy:** Documentation-first bootstrap; preserve the distinction between standalone rodtui and consumer xi. Use Ratatui + an isolated Crossterm backend; Clap for CLI; a shared typed component registry for CLI/schema/SDK.
 
-**Validation:** Documentation created on GitHub. No Rust workspace, executable, CI run, release binary, or installer has yet been verified.
+**Validation:** Documentation, installer source, CI and release workflows committed. No Rust workspace, binary, workflow run, or release has yet been verified. Curl installation is not ready until a release exists.
 
 **How to test today:**
 ```sh
@@ -25,8 +25,10 @@ test -f README.md && test -f ARCHITECTURE.md && echo "Documentation present"
 - [ ] Cargo workspace and compiling CLI
 - [ ] Native Ratatui adapter
 - [ ] First interactive choose demo
-- [ ] CI builds and tests
-- [ ] Release artifacts and verified curl installer
+- [x] CI workflow scaffold
+- [ ] CI run and Rust checks verified
+- [x] Installer and release workflow source
+- [ ] Release artifacts and end-to-end curl installation verified
 - [ ] Gum baseline parity
 - [ ] Ratatui widget coverage
 - [ ] Declarative runtime
