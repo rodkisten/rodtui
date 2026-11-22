@@ -3,7 +3,7 @@
 //! The pure `Selection` state is independent of the terminal, making it easy
 //! to test navigation without requiring a real TTY.
 
-use std::io::{self, IsTerminal, Stdout};
+use std::io::{self, IsTerminal, Stderr};
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
@@ -50,22 +50,22 @@ impl Selection {
 /// Rust calls `drop` when the guard leaves scope, including when `?` returns
 /// early. This is the simplest form of RAII (resource acquisition is initialization).
 struct TerminalSession {
-    terminal: Terminal<CrosstermBackend<Stdout>>,
+    terminal: Terminal<CrosstermBackend<Stderr>>,
 }
 
 impl TerminalSession {
     /// Enter raw mode and the alternate screen, then initialize Ratatui.
     fn new() -> io::Result<Self> {
         enable_raw_mode()?;
-        if let Err(error) = execute!(io::stdout(), EnterAlternateScreen) {
+        if let Err(error) = execute!(io::stderr(), EnterAlternateScreen) {
             let _ = disable_raw_mode();
             return Err(error);
         }
 
-        match Terminal::new(CrosstermBackend::new(io::stdout())) {
+        match Terminal::new(CrosstermBackend::new(io::stderr())) {
             Ok(terminal) => Ok(Self { terminal }),
             Err(error) => {
-                let _ = execute!(io::stdout(), LeaveAlternateScreen);
+                let _ = execute!(io::stderr(), LeaveAlternateScreen);
                 let _ = disable_raw_mode();
                 Err(error)
             }
@@ -76,7 +76,7 @@ impl TerminalSession {
 impl Drop for TerminalSession {
     /// Always attempt both cleanup operations, even if the first one fails.
     fn drop(&mut self) {
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        let _ = execute!(io::stderr(), LeaveAlternateScreen);
         let _ = disable_raw_mode();
         let _ = self.terminal.show_cursor();
     }
@@ -84,9 +84,9 @@ impl Drop for TerminalSession {
 
 /// Run a single-choice UI and return its selected index, or None on cancel.
 pub fn choose(items: &[String], title: Option<&str>) -> io::Result<Option<usize>> {
-    // This milestone uses stdout for the TUI. A later milestone will open
-    // /dev/tty so redirected stdout can remain a clean data channel.
-    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+    // The TUI renders to stderr, preserving stdout for the selected value.
+    // Keyboard events still require an interactive stdin; /dev/tty is future work.
+    if !io::stdin().is_terminal() || !io::stderr().is_terminal() {
         return Err(io::Error::other("choose requires an interactive terminal"));
     }
 
