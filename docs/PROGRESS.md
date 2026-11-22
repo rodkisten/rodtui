@@ -50,3 +50,26 @@ test -f README.md && test -f ARCHITECTURE.md && echo "Documentation present"
 **Known limitations:** Gaps, risks, and failed checks.
 
 **Next:** Highest-value follow-up block.
+
+## 2026-11-22 · Phase 1: first interactive Rust command
+
+**Changed:** Added Cargo package manifest, commented Rust entry point, `choose` widget, selection state tests, and gitignore. Changed the renderer to stderr so stdout carries only the selected value. Updated the release build to tolerate the initial absence of a Cargo.lock.
+
+**Strategy:** Start with one cohesive CLI-to-terminal vertical slice rather than prematurely splitting into many crates. Isolate selection state from terminal rendering and use an RAII guard for cleanup.
+
+**Tests executed:** Not executed: the available container lacks Cargo and could not resolve github.com. GitHub file writes succeeded; compilation and runtime behavior are unverified.
+
+**How to test:**
+```sh
+git clone https://github.com/rodkisten/rodtui.git
+cd rodtui
+cargo fmt --all -- --check
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo run -- choose Deploy Build Test
+cargo run -- choose Production Staging --title Environment
+```
+
+**Known limitations:** No checked-in Cargo.lock yet, no PTY integration tests, no fuzzy search, no public SDK, and no published release. The current UI requires interactive stdin and stderr. CI may identify compiler or formatting issues requiring a follow-up patch.
+
+**Next:** Fix any compiler/CI failures, commit a Cargo.lock, add TestBackend snapshots and PTY cleanup tests, then extract reusable public SDK APIs.
