@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check documentation and installer syntax
+        run: |
+          test -s README.md
+          test -s ARCHITECTURE.md
+          test -s docs/PROGRESS.md
+          sh -n install.sh
+      - name: Detect Rust workspace
+        id: workspace
+        run: |
+          if test -f Cargo.toml; then echo 'exists=true' >> "$GITHUB_OUTPUT"; else echo 'exists=false' >> "$GITHUB_OUTPUT"; fi
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.workspace.outputs.exists == 'true'
+        with:
+          components: rustfmt, clippy
+      - name: Rust formatting
+        if: steps.workspace.outputs.exists == 'true'
+        run: cargo fmt --all -- --check
+      - name: Rust lint
+        if: steps.workspace.outputs.exists == 'true'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Rust tests
+        if: steps.workspace.outputs.exists == 'true'
+        run: cargo test --workspace
+      - name: Rust release build
+        if: steps.workspace.outputs.exists == 'true'
+        run: cargo build --release
