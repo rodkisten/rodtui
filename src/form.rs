@@ -50,18 +50,21 @@ pub struct InputState {
 
 impl InputState {
     pub fn new(value: String, args: &InputArgs) -> Result<Self, String> {
-        if args.max_length.is_some_and(|maximum| args.min_length > maximum) {
+        if args
+            .max_length
+            .is_some_and(|maximum| args.min_length > maximum)
+        {
             return Err("--min-length cannot exceed --max-length".into());
         }
-        if args
-            .char_limit
-            .is_some_and(|limit| args.min_length > limit)
-        {
+        if args.char_limit.is_some_and(|limit| args.min_length > limit) {
             return Err("--min-length cannot exceed --char-limit".into());
         }
         let value: Vec<char> = value.chars().collect();
         if args.char_limit.is_some_and(|limit| value.len() > limit) {
-            return Err(format!("initial value exceeds --char-limit ({})", value.len()));
+            return Err(format!(
+                "initial value exceeds --char-limit ({})",
+                value.len()
+            ));
         }
         let cursor = value.len();
         Ok(Self {
@@ -457,7 +460,9 @@ fn render_input(
     let chunks = surface_chunks(content, geometry.instructions);
     let raw = state.value();
     let shown = if args.password {
-        args.password_character.to_string().repeat(raw.chars().count())
+        args.password_character
+            .to_string()
+            .repeat(raw.chars().count())
     } else {
         raw
     };

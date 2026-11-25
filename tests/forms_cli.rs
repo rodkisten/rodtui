@@ -57,14 +57,7 @@ fn input_validates_and_serializes_explicit_values_without_a_terminal() {
     );
 
     let invalid = run(
-        &[
-            "input",
-            "--value",
-            "ab",
-            "--accept",
-            "--min-length",
-            "3",
-        ],
+        &["input", "--value", "ab", "--accept", "--min-length", "3"],
         b"",
     );
     assert_eq!(invalid.status.code(), Some(2));
