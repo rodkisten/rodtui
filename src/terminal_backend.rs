@@ -8,9 +8,11 @@ use ratatui::{
     layout::{Position, Size},
 };
 
+/// Crossterm backend that renders to stderr while reserving stdout for results.
 pub struct TerminalBackend(CrosstermBackend<Stderr>);
 
 impl TerminalBackend {
+    /// Create a terminal backend attached to the process stderr stream.
     pub fn new() -> Self {
         Self(CrosstermBackend::new(io::stderr()))
     }
@@ -116,4 +118,25 @@ fn parse_position(response: &[u8]) -> Option<Position> {
         x: column.parse::<u16>().ok()?.checked_sub(1)?,
         y: row.parse::<u16>().ok()?.checked_sub(1)?,
     })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::parse_position;
+    use ratatui::layout::Position;
+
+    #[test]
+    fn parses_one_based_terminal_cursor_position() {
+        assert_eq!(
+            parse_position(b"\x1b[12;34R"),
+            Some(Position { x: 33, y: 11 })
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_or_zero_cursor_positions() {
+        assert_eq!(parse_position(b"12;34"), None);
+        assert_eq!(parse_position(b"\x1b[0;1R"), None);
+        assert_eq!(parse_position(b"\x1b[1;0R"), None);
+    }
 }

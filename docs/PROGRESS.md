@@ -127,7 +127,7 @@ the controlling terminal. The PTY suite keeps both stdin and stdout piped,
 so it catches terminal escape bytes leaking into stdout as well as raw-mode
 or alternate-screen cleanup failures.
 
-**Tests executed:** Four state/input/output unit tests, five compiled-binary pipeline tests, and three pseudo-terminal tests passed. Coverage exercises arguments, files, line and NUL stdin, fuzzy unique matching, deduplication, JSON structure, original index output, no-match code `1`, invalid-input code `2`, inline multiselect, spaces inside fuzzy queries, fullscreen cancellation, terminal restoration, bracketed-paste cleanup, and clean stdout. Formatting, strict Clippy, release build, and the complete local suite passed before publication; CI runs the same locked checks and PTY harness.
+**Tests executed:** Six state/input/output/terminal unit tests, five compiled-binary pipeline tests, and three pseudo-terminal tests passed. Coverage exercises arguments, files, line and NUL stdin, fuzzy unique matching, deduplication, JSON structure, original index output, no-match code `1`, invalid-input code `2`, inline multiselect, spaces inside fuzzy queries, fullscreen cancellation, terminal restoration, bracketed-paste cleanup, and clean stdout. Formatting, strict Clippy, release build, and the complete local suite passed before publication; CI runs the same locked checks and PTY harness.
 
 **How to test:** Run `printf 'Deploy\nBuild\nTest\n' | cargo run -- choose --filter --multi --output json`. Type `bu`, press Tab to mark, then Enter. For a noninteractive contract, run `printf 'Deploy\nBuild\nTest\n' | cargo run -- choose --filter --query bld --select-1 --output json`. See `docs/CHOOSE.md` for complete examples.
 
