@@ -73,3 +73,31 @@ cargo run -- choose Production Staging --title Environment
 **Known limitations:** No checked-in Cargo.lock yet, no PTY integration tests, no fuzzy search, no public SDK, and no published release. The current UI requires interactive stdin and stderr. CI may identify compiler or formatting issues requiring a follow-up patch.
 
 **Next:** Fix any compiler/CI failures, commit a Cargo.lock, add TestBackend snapshots and PTY cleanup tests, then extract reusable public SDK APIs.
+
+## 2026-11-24 · Local baseline validation
+
+**Changed:** Added the generated `Cargo.lock` so local builds resolve a reproducible dependency set. Applied `rustfmt` formatting to `src/main.rs` and `src/choose.rs` after the format check found two layout differences.
+
+**Strategy:** Validate the checked-in command locally without relying on a workflow run. The interactive command was exercised through a pseudo-terminal, including arrow-key navigation, Enter selection, and the selected value on stdout.
+
+**Tests executed:** `cargo fmt --all -- --check` passed; `cargo test` passed (2 tests); `cargo clippy --all-targets -- -D warnings` passed; `cargo build --release` passed; pseudo-terminal interaction selected `Build` successfully. `./target/release/rodtui choose Deploy Build Test` outside a TTY returned the expected `choose requires an interactive terminal` error.
+
+**How to test:** Run `cargo run -- choose Deploy Build Test --title "Pick a task"` in a real terminal, use ↑/↓ or j/k, and press Enter. The selected item is written to stdout; the interface is rendered to stderr.
+
+**Known limitations:** The GitHub CI and release workflow files are present, but no workflow run or release was validated as part of this local check. The command currently requires stdin and stderr to be terminals; `/dev/tty` support and terminal cleanup integration tests remain future work.
+
+**Next:** Add deterministic Ratatui `TestBackend` rendering tests and a terminal cleanup integration test, then extract reusable public SDK APIs.
+
+## 2026-11-24 · Typed choose configuration and compact viewport
+
+**Changed:** Added the first typed component registry in `src/registry.rs` and moved `choose` arguments into it. The component now defaults to a content-sized inline viewport, with explicit `--fullscreen` support. Added configurable dimensions, placement, borders, padding, prompt, instruction visibility, initial selection, highlight spacing, and named/RGB/indexed colors. Advanced namespaced aliases mirror the typed registry.
+
+**Strategy:** Use one Rust type model as the source for Clap today and for schemas, documentation, and SDK types later. Map declarative values directly to Ratatui types while keeping terminal lifecycle and event handling inside the renderer. Preserve list state between frames so long lists retain their scroll offset.
+
+**Checks executed:** `cargo fmt --all -- --check`, `cargo check`, `cargo clippy --all-targets -- -D warnings`, `cargo build`, and CLI help generation completed successfully. A pseudo-terminal smoke selected `Build` in both modes and confirmed that compact mode stays inline while `--fullscreen` enters the alternate screen. Automated unit tests were not run in this block.
+
+**How to test:** Run `cargo run -- choose Deploy Build Test --title "Choose a task"` for the compact themed viewport. Add `--fullscreen` for the alternate screen. Run `cargo run -- choose --help` to inspect all supported flags and aliases.
+
+**Known limitations:** This is the first registry slice rather than the complete Ratatui coverage matrix. The inline renderer still reads keyboard events from stdin instead of a separate controlling TTY. Declarative YAML/JSON generation and Gum compatibility aliases remain pending.
+
+**Next:** Publish the branch for mobile terminal review, then add registry metadata/schema generation and extend the same model to `confirm` and `input`.

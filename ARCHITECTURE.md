@@ -34,6 +34,11 @@ Begin with fewer crates if necessary; split only at proven API boundaries. The p
 
 Use Ratatui as rendering abstraction and Crossterm as default terminal/event backend. The backend adapter is isolated. Terminal lifecycle uses RAII guards and explicit restoration on normal exits, recoverable errors, and panic hooks where safe. Render to controlling TTY, not stdout, when stdout carries results. No TTY: return a clear error or use an explicit noninteractive mode. Detect capabilities and honor NO_COLOR and reduced-motion configuration.
 
+Interactive component commands default to a compact inline viewport sized from
+their content. Fullscreen mode and the alternate screen are explicit. This
+keeps short selections usable in mobile terminals and preserves surrounding
+shell context while still allowing dashboards to own the complete screen.
+
 Backends: Crossterm (default), TestBackend (tests), Termwiz (possible future feature). Support inline, fullscreen and fixed viewports. Avoid mixing incompatible Crossterm versions.
 
 ## 4. CLI parsing
@@ -45,6 +50,13 @@ Precedence: defaults < user config < project config < environment < CLI flags. S
 ## 5. Component registry and coverage
 
 A versioned registry is the source of truth for widget IDs, arguments, property types, defaults, validation, help text, schema, and documentation. Maintain a machine-readable coverage matrix pinned to an exact Ratatui version. Classify each capability as supported, partial, or pending, with a test link.
+
+CLI names have two layers: short familiar flags inspired by fzf and Gum for
+common operations, and namespaced aliases matching the typed registry for
+advanced properties. For example, `--width` aliases `--viewport.width`, while
+`--selected-bg` aliases `--style.selected-bg`. Every declarative Ratatui
+property must either map to the registry or appear as pending in the coverage
+matrix; runtime callbacks and Rust generic types remain SDK concerns.
 
 Native coverage targets: Paragraph/Text/Line/Span, Block, List, Table, BarChart, Chart/Dataset, Sparkline, Gauge/LineGauge, Canvas, Calendar, Scrollbar, Clear, Layout/Constraint/Flex/Rect, Style/Modifier/Color, viewports, and stateful rendering. Distinguish native Ratatui widgets from rodtui extensions.
 

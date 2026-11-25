@@ -11,5 +11,6 @@ repository = "https://github.com/rodkisten/rodtui"
 ratatui = "0.30.0"
 crossterm = "0.29"
 clap = { version = "4.5", features = ["derive"] }
+unicode-width = "0.2"
 
 [dev-dependencies]

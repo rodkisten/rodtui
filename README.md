@@ -15,7 +15,7 @@
 (_____)
 ```
 
-> **Status: inception / documentation-first.** Commands shown below are the intended public API, not claims that a working binary has shipped.
+> **Status: early alpha.** `rodtui choose` is implemented for local Rust builds. Other commands shown below describe the intended public API; no release binary has shipped yet.
 
 ## Why rodtui?
 
@@ -34,6 +34,28 @@ rodtui table --file users.json --query '.users[]' --columns name,email,status
 rodtui run dashboard.yaml
 rodtui playground
 ```
+
+The default viewport is compact and inline, so a component occupies only the
+rows it needs and returns control to the surrounding shell. Fullscreen mode is
+explicit:
+
+```sh
+rodtui choose Deploy Build Test \
+  --title "Choose a task" \
+  --width 48 \
+  --border rounded \
+  --border-color '#665c99' \
+  --selected-bg '#7c5cff'
+
+rodtui choose Deploy Build Test --fullscreen
+```
+
+Common flags use familiar fzf/Gum-style names. Advanced aliases mirror the
+typed component model, such as `--viewport.width`, `--block.border`, and
+`--style.selected-bg`. Colors accept names, `#RRGGBB`, and `ansi:N` values.
+The versioned component registry is intended to generate CLI arguments,
+schemas, SDK types, documentation, and a Ratatui coverage matrix from the same
+definitions.
 
 The CLI will support interactive TTY usage, stdin pipelines, structured stdout, script-friendly exit codes, and machine-readable schemas. Output to stdout is reserved for selected values/data; UI rendering uses a controlling TTY.
 
@@ -91,7 +113,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical specification: cra
 | Phase | Scope | Exit criteria | Status |
 | --- | --- | --- | --- |
 | 0 · Foundation | Architecture, contributor rules, CI, release/install design | Reviewed docs and bootstrap checks | 🟡 In progress |
-| 1 · Kernel | Cargo workspace, Ratatui, Crossterm backend, terminal guards, test backend | Runnable CLI and terminal restoration tests | ⬜ Planned |
+| 1 · Kernel | Cargo workspace, Ratatui, Crossterm backend, terminal guards, test backend | Runnable CLI and terminal restoration tests | 🟡 In progress |
 | 2 · Gum baseline | choose, filter, input, confirm, write, table, style, spin, pager | Scriptable commands with contract tests | ⬜ Planned |
 | 3 · Ratatui coverage | Native widgets, styles, constraints, viewports, state adapters | Versioned coverage matrix and snapshots | ⬜ Planned |
 | 4 · Interactive composition | Menus, tree, palettes, forms, focus, keyboard/mouse | Complex navigation demos | ⬜ Planned |
