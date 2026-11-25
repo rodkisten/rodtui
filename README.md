@@ -50,6 +50,18 @@ rodtui choose Deploy Build Test \
 rodtui choose Deploy Build Test --fullscreen
 ```
 
+Themes provide semantic tokens that can still be overridden flag by flag:
+
+```sh
+rodtui choose Deploy Build Test --theme dracula
+rodtui choose Deploy Build Test --theme nord --selected-bg '#7c5cff'
+```
+
+Available presets: `rod`, `graphite`, `dracula`, `nord`, `gruvbox`, and
+`monochrome`. Instructions automatically shorten on narrow terminals; use
+`--instruction-mode full|compact|minimal|hidden` or `--instruction` to control
+the line explicitly.
+
 Common flags use familiar fzf/Gum-style names. Advanced aliases mirror the
 typed component model, such as `--viewport.width`, `--block.border`, and
 `--style.selected-bg`. Colors accept names, `#RRGGBB`, and `ansi:N` values.

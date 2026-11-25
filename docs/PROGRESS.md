@@ -101,3 +101,17 @@ cargo run -- choose Production Staging --title Environment
 **Known limitations:** This is the first registry slice rather than the complete Ratatui coverage matrix. The inline renderer still reads keyboard events from stdin instead of a separate controlling TTY. Declarative YAML/JSON generation and Gum compatibility aliases remain pending.
 
 **Next:** Publish the branch for mobile terminal review, then add registry metadata/schema generation and extend the same model to `confirm` and `input`.
+
+## 2026-11-24 · Shared themes and responsive instructions
+
+**Changed:** Added reusable `rod`, `graphite`, `dracula`, `nord`, `gruvbox`, and `monochrome` theme presets to the typed registry. Explicit color flags now override semantic theme tokens individually. Added full, compact, minimal, hidden, and automatic instruction modes; automatic mode chooses copy from the resolved terminal width.
+
+**Strategy:** Keep theme values semantic so future components share a coherent palette without duplicating color constants. Preserve complete CLI control by resolving the preset first and applying explicit color flags afterward. Keep instruction density separate from viewport sizing so mobile terminals receive readable shortcuts automatically.
+
+**Checks executed:** `cargo fmt --all -- --check`, `cargo check`, strict Clippy, and CLI help generation completed successfully. A Clippy warning for a lazy boolean closure was corrected. A pseudo-terminal smoke confirmed Dracula RGB tokens, automatic minimal instructions at width 30, inline viewport behavior, and cancellation exit code 130.
+
+**How to test:** Run `cargo run -- choose Deploy Build Test --theme dracula`, then compare `--theme nord`, `--theme gruvbox`, and `--theme monochrome`. Use `--width 30` to see compact instruction copy and `--instruction-mode full` to force the complete line.
+
+**Known limitations:** Presets currently live in compiled registry data; user-defined theme files and configuration precedence are pending. Color capability detection and `NO_COLOR` support remain future work.
+
+**Next:** Add registry metadata and schema generation, then reuse theme and viewport contracts for `confirm` and `input`.

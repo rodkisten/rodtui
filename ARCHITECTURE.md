@@ -38,6 +38,8 @@ Interactive component commands default to a compact inline viewport sized from
 their content. Fullscreen mode and the alternate screen are explicit. This
 keeps short selections usable in mobile terminals and preserves surrounding
 shell context while still allowing dashboards to own the complete screen.
+Instruction copy and other secondary content use terminal-width breakpoints so
+components retain their meaning without overflowing narrow mobile viewports.
 
 Backends: Crossterm (default), TestBackend (tests), Termwiz (possible future feature). Support inline, fullscreen and fixed viewports. Avoid mixing incompatible Crossterm versions.
 
@@ -57,6 +59,11 @@ advanced properties. For example, `--width` aliases `--viewport.width`, while
 `--selected-bg` aliases `--style.selected-bg`. Every declarative Ratatui
 property must either map to the registry or appear as pending in the coverage
 matrix; runtime callbacks and Rust generic types remain SDK concerns.
+
+Themes expose semantic tokens such as foreground, background, selection,
+border, title, and muted text. Components consume tokens rather than embedding
+colors. A preset supplies defaults, and explicit component flags override
+individual tokens without discarding the rest of the preset.
 
 Native coverage targets: Paragraph/Text/Line/Span, Block, List, Table, BarChart, Chart/Dataset, Sparkline, Gauge/LineGauge, Canvas, Calendar, Scrollbar, Clear, Layout/Constraint/Flex/Rect, Style/Modifier/Color, viewports, and stateful rendering. Distinguish native Ratatui widgets from rodtui extensions.
 

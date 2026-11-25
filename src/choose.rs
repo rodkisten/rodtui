@@ -3,7 +3,10 @@
 //! The pure `Selection` state is independent of the terminal, making it easy
 //! to test navigation without requiring a real TTY.
 
-use std::io::{self, IsTerminal, Stderr};
+use std::{
+    borrow::Cow,
+    io::{self, IsTerminal, Stderr},
+};
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
@@ -21,7 +24,11 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::registry::{AxisPosition, ChooseArgs, TextAlignment};
+use crate::registry::{AxisPosition, ChooseArgs, InstructionMode, TextAlignment, ThemePalette};
+
+const FULL_INSTRUCTION: &str = "↑/↓ or j/k: navigate  •  Enter: select  •  Esc/q: cancel";
+const COMPACT_INSTRUCTION: &str = "↑↓ move  •  ↵ select  •  esc cancel";
+const MINIMAL_INSTRUCTION: &str = "↑↓ move  •  ↵ select";
 
 /// Selection index with safe wrap-around navigation.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -127,13 +134,14 @@ pub fn choose(args: &ChooseArgs) -> io::Result<Option<usize>> {
 
     let terminal_width = size().map(|(width, _)| width).unwrap_or(80);
     let geometry = Geometry::resolve(args, terminal_width);
+    let theme = resolve_theme(args);
     let mut session = TerminalSession::new(args.viewport.fullscreen, geometry.viewport_height)?;
     let mut selection = Selection::new(args.initial, args.items.len());
     let mut list_state = ListState::default().with_selected(Some(selection.index()));
 
     loop {
         session.terminal.draw(|frame| {
-            render(frame, args, geometry, &mut list_state);
+            render(frame, args, geometry, theme, &mut list_state);
         })?;
 
         // Ignore key-release events, which some terminals emit separately.
@@ -185,10 +193,19 @@ impl Geometry {
         let title_width = (UnicodeWidthStr::width(args.title.as_str()) as u16)
             .saturating_add(args.block.padding.saturating_mul(2))
             .saturating_add(border);
-        let instruction_width = if !args.no_instructions {
-            UnicodeWidthStr::width(args.instruction.as_str()) as u16
-        } else {
+        let preferred_instruction =
+            args.instruction
+                .as_deref()
+                .unwrap_or(match args.instruction_mode {
+                    InstructionMode::Compact => COMPACT_INSTRUCTION,
+                    InstructionMode::Minimal => MINIMAL_INSTRUCTION,
+                    InstructionMode::Hidden => "",
+                    InstructionMode::Auto | InstructionMode::Full => FULL_INSTRUCTION,
+                });
+        let instruction_width = if args.no_instructions {
             0
+        } else {
+            UnicodeWidthStr::width(preferred_instruction) as u16
         };
         let natural_width = list_width
             .max(title_width)
@@ -200,7 +217,7 @@ impl Geometry {
             .unwrap_or(natural_width)
             .clamp(1, terminal_width.max(1));
 
-        let instructions = !args.no_instructions && !args.instruction.is_empty();
+        let instructions = instruction_text(args, width).is_some();
         let natural_list_height = (args.items.len() as u16).clamp(1, 10);
         let natural_panel_height = natural_list_height.saturating_add(border);
         let requested_total = args
@@ -224,11 +241,12 @@ fn render(
     frame: &mut Frame<'_>,
     args: &ChooseArgs,
     geometry: Geometry,
+    theme: ThemePalette,
     list_state: &mut ListState,
 ) {
     let area = frame.area();
     frame.render_widget(
-        Block::default().style(Style::default().bg(args.style.background.0)),
+        Block::default().style(Style::default().bg(theme.background)),
         area,
     );
 
@@ -272,17 +290,13 @@ fn render(
         })
         .title_style(
             Style::default()
-                .fg(args.block.title_color.0)
+                .fg(theme.title)
                 .add_modifier(Modifier::BOLD),
         )
         .borders(borders)
-        .border_style(Style::default().fg(args.block.border_color.0))
+        .border_style(Style::default().fg(theme.border))
         .padding(Padding::horizontal(args.block.padding))
-        .style(
-            Style::default()
-                .fg(args.style.foreground.0)
-                .bg(args.style.background.0),
-        );
+        .style(Style::default().fg(theme.foreground).bg(theme.background));
     if let Some(border_type) = args.block.border.ratatui() {
         block = block.border_type(border_type);
     }
@@ -294,24 +308,76 @@ fn render(
         .highlight_spacing(args.style.highlight_spacing.into())
         .highlight_style(
             Style::default()
-                .fg(args.style.selected_fg.0)
-                .bg(args.style.selected_bg.0)
+                .fg(theme.selected_foreground)
+                .bg(theme.selected_background)
                 .add_modifier(Modifier::BOLD),
         );
     frame.render_stateful_widget(list, chunks[0], list_state);
 
     if geometry.instructions && chunks[1].height > 0 {
+        let instruction = instruction_text(args, content.width)
+            .expect("geometry reserves a row only when instruction text exists");
         frame.render_widget(
-            Paragraph::new(args.instruction.as_str())
+            Paragraph::new(instruction.as_ref())
                 .alignment(Alignment::Center)
-                .style(
-                    Style::default()
-                        .fg(args.style.instruction_fg.0)
-                        .bg(args.style.background.0),
-                ),
+                .style(Style::default().fg(theme.muted).bg(theme.background)),
             chunks[1],
         );
     }
+}
+
+/// Merge a reusable preset with any explicit semantic color overrides.
+fn resolve_theme(args: &ChooseArgs) -> ThemePalette {
+    let mut palette = args.theme.palette();
+    if let Some(color) = args.style.foreground {
+        palette.foreground = color.0;
+    }
+    if let Some(color) = args.style.background {
+        palette.background = color.0;
+    }
+    if let Some(color) = args.style.selected_fg {
+        palette.selected_foreground = color.0;
+    }
+    if let Some(color) = args.style.selected_bg {
+        palette.selected_background = color.0;
+    }
+    if let Some(color) = args.block.border_color {
+        palette.border = color.0;
+    }
+    if let Some(color) = args.block.title_color {
+        palette.title = color.0;
+    }
+    if let Some(color) = args.style.instruction_fg {
+        palette.muted = color.0;
+    }
+    palette
+}
+
+/// Select instruction copy that fits the resolved component width.
+fn instruction_text(args: &ChooseArgs, width: u16) -> Option<Cow<'_, str>> {
+    if args.no_instructions || matches!(args.instruction_mode, InstructionMode::Hidden) {
+        return None;
+    }
+    if let Some(custom) = args.instruction.as_deref() {
+        return (!custom.is_empty()).then_some(Cow::Borrowed(custom));
+    }
+
+    let text = match args.instruction_mode {
+        InstructionMode::Full => FULL_INSTRUCTION,
+        InstructionMode::Compact => COMPACT_INSTRUCTION,
+        InstructionMode::Minimal => MINIMAL_INSTRUCTION,
+        InstructionMode::Hidden => return None,
+        InstructionMode::Auto => {
+            if width >= UnicodeWidthStr::width(FULL_INSTRUCTION) as u16 {
+                FULL_INSTRUCTION
+            } else if width >= UnicodeWidthStr::width(COMPACT_INSTRUCTION) as u16 {
+                COMPACT_INSTRUCTION
+            } else {
+                MINIMAL_INSTRUCTION
+            }
+        }
+    };
+    Some(Cow::Borrowed(text))
 }
 
 /// Position a rectangle without allocating a nested layout tree.

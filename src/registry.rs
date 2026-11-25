@@ -27,12 +27,13 @@ pub struct ChooseArgs {
     #[arg(long, default_value = "❯ ")]
     pub prompt: String,
 
-    /// Instruction line rendered below the list.
-    #[arg(
-        long,
-        default_value = "↑/↓ or j/k: navigate  •  Enter: select  •  Esc/q: cancel"
-    )]
-    pub instruction: String,
+    /// Custom instruction line; omitted means responsive built-in text.
+    #[arg(long)]
+    pub instruction: Option<String>,
+
+    /// Built-in instruction density.
+    #[arg(long, default_value = "auto", visible_alias = "instruction.mode")]
+    pub instruction_mode: InstructionMode,
 
     /// Hide the instruction line.
     #[arg(long)]
@@ -41,6 +42,10 @@ pub struct ChooseArgs {
     /// Zero-based item selected when the component opens.
     #[arg(long, default_value_t = 0)]
     pub initial: usize,
+
+    /// Reusable color preset; explicit color flags override its tokens.
+    #[arg(long, default_value = "rod", visible_alias = "style.theme")]
+    pub theme: ThemePreset,
 
     /// Viewport dimensions and placement.
     #[command(flatten)]
@@ -87,12 +92,12 @@ pub struct BlockArgs {
     pub border: BorderKind,
 
     /// Border color: name, #RRGGBB, or ansi:N.
-    #[arg(long, default_value = "#665c99", visible_alias = "block.border-color")]
-    pub border_color: CliColor,
+    #[arg(long, visible_alias = "block.border-color")]
+    pub border_color: Option<CliColor>,
 
     /// Title color: name, #RRGGBB, or ansi:N.
-    #[arg(long, default_value = "#c4b5fd", visible_alias = "block.title-color")]
-    pub title_color: CliColor,
+    #[arg(long, visible_alias = "block.title-color")]
+    pub title_color: Option<CliColor>,
 
     /// Horizontal title alignment.
     #[arg(long, default_value = "left", visible_alias = "block.title-alignment")]
@@ -107,28 +112,24 @@ pub struct BlockArgs {
 #[derive(Debug, Clone, Args)]
 pub struct ListStyleArgs {
     /// Normal foreground color.
-    #[arg(long, default_value = "#d6d3e0", visible_alias = "style.foreground")]
-    pub foreground: CliColor,
+    #[arg(long, visible_alias = "style.foreground")]
+    pub foreground: Option<CliColor>,
 
     /// Normal background color.
-    #[arg(long, default_value = "#1f1e2c", visible_alias = "style.background")]
-    pub background: CliColor,
+    #[arg(long, visible_alias = "style.background")]
+    pub background: Option<CliColor>,
 
     /// Selected item foreground color.
-    #[arg(long, default_value = "white", visible_alias = "style.selected-fg")]
-    pub selected_fg: CliColor,
+    #[arg(long, visible_alias = "style.selected-fg")]
+    pub selected_fg: Option<CliColor>,
 
     /// Selected item background color.
-    #[arg(long, default_value = "#7c5cff", visible_alias = "style.selected-bg")]
-    pub selected_bg: CliColor,
+    #[arg(long, visible_alias = "style.selected-bg")]
+    pub selected_bg: Option<CliColor>,
 
     /// Instruction foreground color.
-    #[arg(
-        long,
-        default_value = "#8f8aa8",
-        visible_alias = "style.instruction-fg"
-    )]
-    pub instruction_fg: CliColor,
+    #[arg(long, visible_alias = "style.instruction-fg")]
+    pub instruction_fg: Option<CliColor>,
 
     /// When the prompt column reserves horizontal space.
     #[arg(
@@ -146,6 +147,127 @@ pub enum AxisPosition {
     #[default]
     Center,
     End,
+}
+
+/// Instruction text density selected explicitly or from available width.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum InstructionMode {
+    #[default]
+    Auto,
+    Full,
+    Compact,
+    Minimal,
+    Hidden,
+}
+
+/// Reusable palettes shared by every rodtui component.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum ThemePreset {
+    #[default]
+    Rod,
+    Graphite,
+    Dracula,
+    Nord,
+    Gruvbox,
+    Monochrome,
+}
+
+impl ThemePreset {
+    /// Resolve semantic theme tokens into Ratatui colors.
+    pub fn palette(self) -> ThemePalette {
+        match self {
+            Self::Rod => ThemePalette::rgb(
+                (214, 211, 224),
+                (31, 30, 44),
+                (255, 255, 255),
+                (124, 92, 255),
+                (102, 92, 153),
+                (196, 181, 253),
+                (143, 138, 168),
+            ),
+            Self::Graphite => ThemePalette::rgb(
+                (228, 228, 231),
+                (24, 24, 27),
+                (255, 255, 255),
+                (113, 113, 122),
+                (82, 82, 91),
+                (212, 212, 216),
+                (113, 113, 122),
+            ),
+            Self::Dracula => ThemePalette::rgb(
+                (248, 248, 242),
+                (40, 42, 54),
+                (40, 42, 54),
+                (189, 147, 249),
+                (98, 114, 164),
+                (255, 121, 198),
+                (98, 114, 164),
+            ),
+            Self::Nord => ThemePalette::rgb(
+                (216, 222, 233),
+                (46, 52, 64),
+                (46, 52, 64),
+                (136, 192, 208),
+                (76, 86, 106),
+                (129, 161, 193),
+                (94, 129, 172),
+            ),
+            Self::Gruvbox => ThemePalette::rgb(
+                (235, 219, 178),
+                (40, 40, 40),
+                (40, 40, 40),
+                (215, 153, 33),
+                (102, 92, 84),
+                (250, 189, 47),
+                (146, 131, 116),
+            ),
+            Self::Monochrome => ThemePalette {
+                foreground: Color::White,
+                background: Color::Reset,
+                selected_foreground: Color::Black,
+                selected_background: Color::White,
+                border: Color::DarkGray,
+                title: Color::White,
+                muted: Color::Gray,
+            },
+        }
+    }
+}
+
+/// Semantic colors consumed by components after applying CLI overrides.
+#[derive(Debug, Clone, Copy)]
+pub struct ThemePalette {
+    pub foreground: Color,
+    pub background: Color,
+    pub selected_foreground: Color,
+    pub selected_background: Color,
+    pub border: Color,
+    pub title: Color,
+    pub muted: Color,
+}
+
+impl ThemePalette {
+    /// Construct a palette from readable RGB tuples.
+    fn rgb(
+        foreground: (u8, u8, u8),
+        background: (u8, u8, u8),
+        selected_foreground: (u8, u8, u8),
+        selected_background: (u8, u8, u8),
+        border: (u8, u8, u8),
+        title: (u8, u8, u8),
+        muted: (u8, u8, u8),
+    ) -> Self {
+        let color = |(red, green, blue)| Color::Rgb(red, green, blue);
+        Self {
+            foreground: color(foreground),
+            background: color(background),
+            selected_foreground: color(selected_foreground),
+            selected_background: color(selected_background),
+            border: color(border),
+            title: color(title),
+            muted: color(muted),
+        }
+    }
 }
 
 /// CLI representation of Ratatui's border types plus a borderless option.
