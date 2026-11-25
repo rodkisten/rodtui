@@ -3,24 +3,29 @@
 //! This first milestone implements a real, interactive `choose` command.
 //! Future milestones will move its reusable logic into the public SDK.
 
+//! rodtui: a small executable entry point for a reusable terminal UI toolkit.
+//!
+//! This first milestone implements a real, interactive `choose` command.
+//! Future milestones will move its reusable logic into the public SDK.
+
 mod catalog;
 mod choice;
 mod choose;
-mod flow;
 mod form;
+mod flow;
 mod input;
 mod output;
 mod registry;
+mod table;
 mod terminal_backend;
 mod terminal_session;
 
 use catalog::{RegistryArgs, RunArgs, SchemaArgs};
 use clap::{Parser, Subcommand};
 use flow::FlowArgs;
-use registry::{
-  ChooseArgs, ConfirmArgs, ConfirmOutput, InputArgs, InputOutput,
-};
+use registry::{ChooseArgs, ConfirmArgs, ConfirmOutput, InputArgs, InputOutput, TableArgs};
 use std::io::{self, Write};
+
 
 /// Clap turns these Rust types into validated CLI arguments and generated help.
 #[derive(Debug, Parser)]
