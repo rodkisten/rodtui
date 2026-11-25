@@ -99,6 +99,26 @@ pub struct ChooseArgs {
     #[arg(long)]
     pub select_1: bool,
 
+    /// Layout direction of the list relative to the filter input (fzf's `--layout`).
+    #[arg(long, default_value = "reverse", visible_alias = "layout.direction")]
+    pub layout: ListLayout,
+
+    /// Shell command used to render a preview pane for the active item (`{}` = item).
+    #[arg(long, visible_alias = "preview.command")]
+    pub preview: Option<String>,
+
+    /// Placement of the preview pane when `--preview` is active.
+    #[arg(long, default_value = "right", visible_alias = "preview.position")]
+    pub preview_position: PreviewPosition,
+
+    /// Preview pane size as a percentage (10-90).
+    #[arg(long, default_value_t = 50, visible_alias = "preview.size")]
+    pub preview_size: u16,
+
+    /// Wrap long lines inside the preview pane.
+    #[arg(long, visible_alias = "preview.wrap")]
+    pub preview_wrap: bool,
+
     /// Machine-readable output contract.
     #[arg(long, default_value = "text")]
     pub output: OutputFormat,
@@ -270,6 +290,111 @@ pub struct InputArgs {
     pub style: ListStyleArgs,
 }
 
+/// Arguments accepted by the interactive data table component.
+#[derive(Debug, Clone, Args)]
+pub struct TableArgs {
+    /// Row strings split by `--delimiter`; piped stdin is appended.
+    #[arg(value_name = "ROW", num_args = 0..)]
+    pub rows: Vec<String>,
+
+    /// Read additional rows from a delimited file; repeat for multiple files.
+    #[arg(long, short = 'f', value_name = "PATH")]
+    pub input_file: Vec<PathBuf>,
+
+    /// Do not read rows from piped stdin.
+    #[arg(long)]
+    pub no_stdin: bool,
+
+    /// Column separator character (e.g. `,`, `\t`, `|`).
+    #[arg(long, short = 'd', default_value = ",")]
+    pub delimiter: String,
+
+    /// Explicit column headers separated by `--delimiter`; if omitted, first row is used.
+    #[arg(long)]
+    pub headers: Option<String>,
+
+    /// Explicit column widths in characters (comma-separated, e.g. `12,24,10`).
+    #[arg(long, value_delimiter = ',')]
+    pub widths: Vec<u16>,
+
+    /// Heading shown above the table.
+    #[arg(long, short, default_value = "Table")]
+    pub title: String,
+
+    /// Selection marker rendered before the active row.
+    #[arg(long, default_value = "❯ ")]
+    pub prompt: String,
+
+    /// Enable live fuzzy filtering across all columns while typing.
+    #[arg(long)]
+    pub filter: bool,
+
+    /// Initial fuzzy-filter query; implies --filter.
+    #[arg(long, short = 'q')]
+    pub query: Option<String>,
+
+    /// Fuzzy matching case behavior.
+    #[arg(long, default_value = "smart", visible_alias = "search.case")]
+    pub case: CaseMode,
+
+    /// Mark multiple rows with Tab; without filtering, Space also marks.
+    #[arg(long, short = 'm')]
+    pub multi: bool,
+
+    /// Maximum number of selected rows in multi-select mode.
+    #[arg(long, requires = "multi")]
+    pub limit: Option<usize>,
+
+    /// Hide column header row.
+    #[arg(long)]
+    pub no_header: bool,
+
+    /// Hide separator line below headers.
+    #[arg(long)]
+    pub no_separator: bool,
+
+    /// Machine-readable output contract.
+    #[arg(long, default_value = "text")]
+    pub output: TableOutput,
+
+    /// Custom instruction line; omitted means responsive built-in text.
+    #[arg(long)]
+    pub instruction: Option<String>,
+
+    /// Built-in instruction density.
+    #[arg(long, default_value = "auto", visible_alias = "instruction.mode")]
+    pub instruction_mode: InstructionMode,
+
+    /// Hide the instruction line.
+    #[arg(long)]
+    pub no_instructions: bool,
+
+    /// Reusable color preset; explicit color flags override its tokens.
+    #[arg(long, default_value = "rod", visible_alias = "style.theme")]
+    pub theme: ThemePreset,
+
+    #[command(flatten)]
+    pub viewport: ViewportArgs,
+
+    #[command(flatten)]
+    pub block: BlockArgs,
+
+    #[command(flatten)]
+    pub style: ListStyleArgs,
+}
+
+/// Stdout representation for accepted table rows.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum TableOutput {
+    #[default]
+    Text,
+    Json,
+    Csv,
+    Index,
+}
+
+
+
 /// Terminal viewport behavior. Inline mode is deliberately the default.
 #[derive(Debug, Clone, Args)]
 pub struct ViewportArgs {
@@ -337,9 +462,25 @@ pub struct ListStyleArgs {
     #[arg(long, visible_alias = "style.selected-bg")]
     pub selected_bg: Option<CliColor>,
 
+    /// Highlighted fuzzy-match characters foreground color (fzf's `hl`).
+    #[arg(long, visible_alias = "style.match-fg")]
+    pub match_fg: Option<CliColor>,
+
+    /// Highlighted fuzzy-match characters foreground color on the active row (fzf's `hl+`).
+    #[arg(long, visible_alias = "style.selected-match-fg")]
+    pub selected_match_fg: Option<CliColor>,
+
+    /// Prompt and filter prefix foreground color.
+    #[arg(long, visible_alias = "style.prompt-fg")]
+    pub prompt_fg: Option<CliColor>,
+
     /// Instruction foreground color.
     #[arg(long, visible_alias = "style.instruction-fg")]
     pub instruction_fg: Option<CliColor>,
+
+    /// Render a vertical scrollbar when items overflow the viewport.
+    #[arg(long, visible_alias = "list.scrollbar")]
+    pub scrollbar: bool,
 
     /// When the prompt column reserves horizontal space.
     #[arg(
@@ -348,6 +489,24 @@ pub struct ListStyleArgs {
         visible_alias = "list.highlight-spacing"
     )]
     pub highlight_spacing: HighlightSpacingValue,
+}
+
+/// Direction of the choice list relative to the filter input.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum ListLayout {
+    #[default]
+    Reverse,
+    Default,
+}
+
+/// Placement of the optional preview pane.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum PreviewPosition {
+    #[default]
+    Right,
+    Left,
+    Top,
+    Bottom,
 }
 
 /// Start, center, and end placement shared by both layout axes.
@@ -434,6 +593,9 @@ impl ThemePreset {
                 (31, 30, 44),
                 (255, 255, 255),
                 (124, 92, 255),
+                (196, 181, 253),
+                (250, 204, 21),
+                (167, 139, 250),
                 (102, 92, 153),
                 (196, 181, 253),
                 (143, 138, 168),
@@ -443,6 +605,9 @@ impl ThemePreset {
                 (24, 24, 27),
                 (255, 255, 255),
                 (113, 113, 122),
+                (161, 161, 170),
+                (250, 204, 21),
+                (212, 212, 216),
                 (82, 82, 91),
                 (212, 212, 216),
                 (113, 113, 122),
@@ -452,6 +617,9 @@ impl ThemePreset {
                 (40, 42, 54),
                 (40, 42, 54),
                 (189, 147, 249),
+                (255, 121, 198),
+                (80, 250, 123),
+                (139, 233, 253),
                 (98, 114, 164),
                 (255, 121, 198),
                 (98, 114, 164),
@@ -461,6 +629,9 @@ impl ThemePreset {
                 (46, 52, 64),
                 (46, 52, 64),
                 (136, 192, 208),
+                (235, 203, 139),
+                (46, 52, 64),
+                (129, 161, 193),
                 (76, 86, 106),
                 (129, 161, 193),
                 (94, 129, 172),
@@ -470,6 +641,9 @@ impl ThemePreset {
                 (40, 40, 40),
                 (40, 40, 40),
                 (215, 153, 33),
+                (251, 73, 52),
+                (40, 40, 40),
+                (184, 187, 38),
                 (102, 92, 84),
                 (250, 189, 47),
                 (146, 131, 116),
@@ -479,6 +653,9 @@ impl ThemePreset {
                 background: Color::Reset,
                 selected_foreground: Color::Black,
                 selected_background: Color::White,
+                match_foreground: Color::Yellow,
+                selected_match_foreground: Color::Blue,
+                prompt: Color::White,
                 border: Color::DarkGray,
                 title: Color::White,
                 muted: Color::Gray,
@@ -506,6 +683,15 @@ pub fn resolve_theme(
     if let Some(color) = style.selected_bg {
         palette.selected_background = color.0;
     }
+    if let Some(color) = style.match_fg {
+        palette.match_foreground = color.0;
+    }
+    if let Some(color) = style.selected_match_fg {
+        palette.selected_match_foreground = color.0;
+    }
+    if let Some(color) = style.prompt_fg {
+        palette.prompt = color.0;
+    }
     if let Some(color) = block.border_color {
         palette.border = color.0;
     }
@@ -525,6 +711,9 @@ pub struct ThemePalette {
     pub background: Color,
     pub selected_foreground: Color,
     pub selected_background: Color,
+    pub match_foreground: Color,
+    pub selected_match_foreground: Color,
+    pub prompt: Color,
     pub border: Color,
     pub title: Color,
     pub muted: Color,
@@ -532,11 +721,15 @@ pub struct ThemePalette {
 
 impl ThemePalette {
     /// Construct a palette from readable RGB tuples.
+    #[allow(clippy::too_many_arguments)]
     fn rgb(
         foreground: (u8, u8, u8),
         background: (u8, u8, u8),
         selected_foreground: (u8, u8, u8),
         selected_background: (u8, u8, u8),
+        match_foreground: (u8, u8, u8),
+        selected_match_foreground: (u8, u8, u8),
+        prompt: (u8, u8, u8),
         border: (u8, u8, u8),
         title: (u8, u8, u8),
         muted: (u8, u8, u8),
@@ -547,6 +740,9 @@ impl ThemePalette {
             background: color(background),
             selected_foreground: color(selected_foreground),
             selected_background: color(selected_background),
+            match_foreground: color(match_foreground),
+            selected_match_foreground: color(selected_match_foreground),
+            prompt: color(prompt),
             border: color(border),
             title: color(title),
             muted: color(muted),
