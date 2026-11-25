@@ -1,5 +1,11 @@
 name: 🦀 Release Binaries
 
+run-name: >
+  🦀 Release: ${{
+    github.event_name == 'workflow_dispatch' && format('Manual · {0}', github.ref_name) ||
+    format('{0} · {1}', github.ref_name, github.event.head_commit.message)
+  }}
+
 # Dispara apenas em tags de versão (v*) ou manualmente via workflow_dispatch
 on:
   push:
