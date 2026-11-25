@@ -195,7 +195,8 @@ pub fn document_argv(document: &DeclarativeDocument) -> io::Result<Vec<String>> 
             ))
         })?;
         let values = json_values(key, value)?;
-        if let Some(index) = argument.get_index() {
+        if argument.get_long().is_none() {
+            let index = argument.get_index().unwrap_or(1);
             positional.entry(index).or_default().extend(values);
             continue;
         }
@@ -257,7 +258,7 @@ fn argument_metadata(argument: &Arg) -> ArgumentMetadata {
     ArgumentMetadata {
         flag: argument.get_long().map(ToOwned::to_owned),
         aliases: semantic_aliases(&id),
-        positional: argument.get_index().is_some(),
+        positional: argument.get_long().is_none(),
         required: argument.is_required_set(),
         multiple: matches!(argument.get_action(), ArgAction::Append)
             || matches!(id.as_str(), "items" | "selected" | "input_file"),
