@@ -1,4 +1,11 @@
-name: CI
+name: 🦀 CI
+
+run-name: >
+  🦀 CI: ${{
+    github.event_name == 'pull_request' && format('PR #{0} · {1}', github.event.pull_request.number, github.event.pull_request.title) ||
+    github.event_name == 'workflow_dispatch' && format('Manual · {0}', github.ref_name) ||
+    format('{0} · {1}', github.ref_name, github.event.head_commit.message)
+  }}
 
 on:
   pull_request:
@@ -9,41 +16,63 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   validate:
+    name: 🦀 Validate & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Check documentation and installer syntax
+      - name: 🦀 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🦀 Check documentation and installer syntax
         run: |
           test -s README.md
           test -s ARCHITECTURE.md
           test -s docs/PROGRESS.md
           sh -n install.sh
-      - name: Detect Rust workspace
+
+      - name: 🦀 Detect Rust workspace
         id: workspace
         run: |
-          if test -f Cargo.toml; then echo 'exists=true' >> "$GITHUB_OUTPUT"; else echo 'exists=false' >> "$GITHUB_OUTPUT"; fi
-      - uses: dtolnay/rust-toolchain@stable
+          if test -f Cargo.toml; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 🦀 Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         if: steps.workspace.outputs.exists == 'true'
         with:
           components: rustfmt, clippy
-      - name: Rust formatting
+
+      - name: 🦀 Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        if: steps.workspace.outputs.exists == 'true'
+
+      - name: 🦀 Rust formatting
         if: steps.workspace.outputs.exists == 'true'
         run: cargo fmt --all -- --check
-      - name: Rust lint
+
+      - name: 🦀 Rust lint
         if: steps.workspace.outputs.exists == 'true'
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: Rust tests
+
+      - name: 🦀 Rust tests
         if: steps.workspace.outputs.exists == 'true'
         run: cargo test --workspace --locked
-      - name: Interactive chooser with a controlling terminal
+
+      - name: 🦀 Interactive TUI PTY tests
         if: steps.workspace.outputs.exists == 'true'
         run: |
           cargo build --locked
           python3 tests/choose_pty.py target/debug/rodtui
           python3 tests/forms_pty.py target/debug/rodtui
           python3 tests/flow_pty.py target/debug/rodtui
-      - name: Rust release build
+
+      - name: 🦀 Rust release build
         if: steps.workspace.outputs.exists == 'true'
         run: cargo build --release --locked
