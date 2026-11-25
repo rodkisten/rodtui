@@ -15,7 +15,10 @@
 (_____)
 ```
 
-> **Status: early alpha.** `rodtui choose` is implemented for local Rust builds. Other commands shown below describe the intended public API; no release binary has shipped yet.
+> **Status: early alpha.** `choose`, `confirm`, `input`, registry/schema
+> introspection, declarative execution, and conditional multi-step flows are
+> implemented. Other commands shown below describe the intended public API;
+> no release binary has shipped yet.
 
 ## Why rodtui?
 
@@ -87,11 +90,45 @@ rodtui registry --component choose
 rodtui schema > rodtui.schema.json
 rodtui run examples/choose.json
 rodtui run --dry-run examples/input.json
+rodtui flow --dry-run examples/release-flow.json
+rodtui flow examples/release-flow.json
 ```
 
 Registry metadata, JSON Schema, and resolved JSON documents are derived from
 the same Clap command graph used by the CLI. See the
 [declarative runtime guide](docs/DECLARATIVE.md).
+
+Complete interactions can be composed into one versioned flow without shell
+glue:
+
+```json
+{
+  "version": 1,
+  "variables": { "environment": "production" },
+  "steps": [
+    {
+      "id": "release",
+      "component": "input",
+      "save_as": "release",
+      "args": { "title": "Release", "required": true }
+    },
+    {
+      "id": "approval",
+      "component": "confirm",
+      "args": {
+        "message": "Deploy ${variables.release.value} to ${variables.environment}?"
+      }
+    }
+  ]
+}
+```
+
+`flow` adds shared variables, typed interpolation, conditional steps,
+affirmative/negative branches, secret redaction, cycle protection, dry-run
+validation, and one consolidated JSON report. Each step still resolves through
+the normal registry and executes the production component. See the
+[flow guide](docs/FLOWS.md) and the interactive
+[`release-flow.json`](examples/release-flow.json).
 
 Themes provide semantic tokens that can still be overridden flag by flag:
 
@@ -173,7 +210,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical specification: cra
 | 3 · Ratatui coverage | Native widgets, styles, constraints, viewports, state adapters | Versioned coverage matrix and snapshots | ⬜ Planned |
 | 4 · Interactive composition | Menus, tree, palettes, forms, focus, keyboard/mouse | Complex navigation demos | ⬜ Planned |
 | 5 · Data engine | JSON/JSONL/CSV, jq-like queries, streaming/windowing | Streaming correctness and bounded-memory tests | ⬜ Planned |
-| 6 · Declarative runtime | YAML/JSON screens, bindings, actions, hot reload | Dashboard example and schema validation | ⬜ Planned |
+| 6 · Declarative runtime | YAML/JSON screens, bindings, actions, hot reload | Dashboard example and schema validation | 🟡 In progress (JSON components and conditional flows) |
 | 7 · Effects & IPC | Animations, async jobs, Unix sockets, live updates | Smooth and cancellable live dashboards | ⬜ Planned |
 | 8 · Playground | Component gallery, property inspector, event/state debug | Usable end-to-end demo | ⬜ Planned |
 | 9 · Stable distribution | Cross-platform artifacts, checksum verification, changelog | curl installer and reproducible releases | ⬜ Planned |
@@ -227,6 +264,9 @@ Never silently execute arbitrary shell commands from untrusted YAML/JSON. Action
 - [Architecture](ARCHITECTURE.md)
 - [Progress](docs/PROGRESS.md)
 - [`choose` guide](docs/CHOOSE.md)
+- [Forms guide](docs/FORMS.md)
+- [Declarative runtime guide](docs/DECLARATIVE.md)
+- [Multi-step flow guide](docs/FLOWS.md)
 - [GitHub repository](https://github.com/rodkisten/rodtui)
 - [Releases](https://github.com/rodkisten/rodtui/releases)
 

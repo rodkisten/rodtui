@@ -150,7 +150,12 @@ pub fn resolve_run(args: &RunArgs) -> io::Result<(Commands, Vec<String>)> {
     let bytes = read_document(&args.file)?;
     let document: DeclarativeDocument = serde_json::from_slice(&bytes)
         .map_err(|error| invalid(format!("invalid declarative JSON: {error}")))?;
-    let argv = document_argv(&document)?;
+    resolve_document(&document)
+}
+
+/// Resolve an in-memory document for the flow engine and other adapters.
+pub fn resolve_document(document: &DeclarativeDocument) -> io::Result<(Commands, Vec<String>)> {
+    let argv = document_argv(document)?;
     let cli = Cli::try_parse_from(&argv)
         .map_err(|error| invalid(format!("invalid declarative component: {error}")))?;
     if matches!(
@@ -163,6 +168,11 @@ pub fn resolve_run(args: &RunArgs) -> io::Result<(Commands, Vec<String>)> {
             "declarative execution only supports interactive components",
         ))
     }
+}
+
+/// Read a JSON document source using the same file/stdin contract as `run`.
+pub fn read_source(path: &PathBuf) -> io::Result<Vec<u8>> {
+    read_document(path)
 }
 
 /// Convert a document to argv while rejecting unknown or structurally invalid keys.

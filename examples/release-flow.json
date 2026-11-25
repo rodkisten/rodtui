@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "name": "Release assistant",
+  "variables": {
+    "environment": "production"
+  },
+  "steps": [
+    {
+      "id": "release",
+      "component": "input",
+      "save_as": "release",
+      "args": {
+        "title": "Release name",
+        "placeholder": "v1.0.0",
+        "required": true,
+        "min_length": 3,
+        "style.theme": "nord"
+      }
+    },
+    {
+      "id": "action",
+      "component": "choose",
+      "args": {
+        "items": ["Deploy", "Build only"],
+        "title": "Action for ${variables.release.value}",
+        "style.theme": "dracula"
+      }
+    },
+    {
+      "id": "approval",
+      "component": "confirm",
+      "when": {
+        "path": "steps.action.value",
+        "equals": "Deploy"
+      },
+      "next": "summary",
+      "next_on_false": "reason",
+      "args": {
+        "message": "Deploy ${variables.release.value} to ${variables.environment}?",
+        "default": "no",
+        "style.theme": "gruvbox"
+      }
+    },
+    {
+      "id": "reason",
+      "component": "input",
+      "save_as": "reason",
+      "next": "summary",
+      "args": {
+        "title": "Why not now?",
+        "required": true,
+        "style.theme": "graphite"
+      }
+    },
+    {
+      "id": "summary",
+      "component": "input",
+      "args": {
+        "value": "${variables.release.value} ready for ${variables.environment}",
+        "accept": true
+      }
+    }
+  ]
+}

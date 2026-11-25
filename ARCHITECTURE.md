@@ -84,6 +84,29 @@ same conflicts, requirements, enums, defaults, and component implementation as
 direct CLI use. Only interactive component commands are allowed through this
 path, preventing recursive registry/schema/run documents.
 
+Multi-step flows are a directed graph over those same declarative component
+documents. Before opening a terminal, the runtime validates IDs, component
+names, start and transition targets, branch compatibility, and the transition
+limit. At execution time it interpolates each step from a shared JSON context,
+then sends the resolved document through the registry-to-argv-to-Clap pipeline.
+Consequently a flow cannot bypass a component's normal type, conflict, enum,
+or validation contract.
+
+Every executed step stores its structured result under `steps.<id>`. A
+`save_as` alias also exposes that result under `variables.<alias>`. Conditions
+read these paths without mutation; exact `${...}` interpolation preserves JSON
+types, while embedded placeholders accept scalar values and produce text.
+Confirmation may route false through `next_on_false`; an unhandled false value
+terminates the flow as rejected. A maximum transition count makes intentional
+loops possible without allowing a malformed graph to run forever.
+
+The flow keeps two contexts: an internal context with real values for later
+steps and an output context used by the consolidated report. Sensitive step
+results are replaced with a redaction marker only in the output context. This
+prevents a secret from appearing in stdout while preserving useful in-memory
+composition. It does not make a secret safe if the author explicitly
+interpolates it into visible terminal copy or passes it to an external system.
+
 Native coverage targets: Paragraph/Text/Line/Span, Block, List, Table, BarChart, Chart/Dataset, Sparkline, Gauge/LineGauge, Canvas, Calendar, Scrollbar, Clear, Layout/Constraint/Flex/Rect, Style/Modifier/Color, viewports, and stateful rendering. Distinguish native Ratatui widgets from rodtui extensions.
 
 Literal Rust API parity cannot be expressed entirely through flags; functional parity uses schemas and SDK extension points.
@@ -136,6 +159,12 @@ The `choose` implementation establishes exit `0` for accepted output, `1` for
 a no-match noninteractive selection, `2` for usage/runtime errors, and `130`
 for user cancellation. Its text, original-index, and JSON encoders are tested
 through the compiled binary with real stdin/stdout pipes.
+
+Flows write exactly one JSON report after the terminal session ends. Exit `0`
+means the graph completed, `1` represents a rejected confirmation or choose
+no-match, `2` represents invalid documents/components/runtime errors, and `130`
+represents cancellation. Component UI remains on the controlling terminal;
+partial step values are never streamed through stdout.
 
 Gum compatibility is tracked separately from Ratatui widget coverage, including argument aliases and exit behavior.
 

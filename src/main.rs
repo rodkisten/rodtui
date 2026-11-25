@@ -7,6 +7,7 @@ mod catalog;
 mod choice;
 mod choose;
 mod form;
+mod flow;
 mod input;
 mod output;
 mod registry;
@@ -15,6 +16,7 @@ mod terminal_session;
 
 use catalog::{RegistryArgs, RunArgs, SchemaArgs};
 use clap::{Parser, Subcommand};
+use flow::FlowArgs;
 use registry::{ChooseArgs, ConfirmArgs, ConfirmOutput, InputArgs, InputOutput};
 use std::io::{self, Write};
 
@@ -46,6 +48,8 @@ enum Commands {
     Schema(SchemaArgs),
     /// Execute choose, confirm, or input from a JSON document.
     Run(RunArgs),
+    /// Execute a conditional multi-component JSON flow.
+    Flow(FlowArgs),
 }
 
 fn main() {
@@ -143,6 +147,11 @@ fn execute(command: Commands) -> io::Result<i32> {
             } else {
                 execute(command)
             }
+        }
+        Commands::Flow(args) => {
+            let execution = flow::run(&args)?;
+            write_stdout(&flow::report_json(&execution, args.compact)?)?;
+            Ok(execution.exit_code)
         }
     }
 }

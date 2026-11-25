@@ -43,6 +43,7 @@ jobs:
           cargo build --locked
           python3 tests/choose_pty.py target/debug/rodtui
           python3 tests/forms_pty.py target/debug/rodtui
+          python3 tests/flow_pty.py target/debug/rodtui
       - name: Rust release build
         if: steps.workspace.outputs.exists == 'true'
         run: cargo build --release --locked

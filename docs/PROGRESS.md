@@ -162,3 +162,46 @@ or alternate-screen cleanup failures.
 **Known limitations:** Version 1 accepts JSON only; YAML/TOML adapters, hosted schema publication, generated language SDKs, migrations, and arbitrary Ratatui widget trees remain future blocks. A document read from stdin consumes that stream, so stdin-backed component values should be embedded in the document or the document should be read from a file.
 
 **Next:** Add declarative multi-component flows with conditional transitions and shared variables while preserving the same registry and terminal contracts.
+
+## 2026-11-25 · Conditional multi-step flow runtime
+
+**Changed:** Added `rodtui flow` as a complete graph runtime over `choose`,
+`confirm`, and `input`. Versioned JSON flows now support initial variables,
+structured per-step results, `save_as` aliases, recursive typed interpolation,
+equality/inequality/existence/truthy conditions, explicit transitions,
+negative-confirmation branches, skipped-step records, sensitive result
+redaction, transition-cycle limits, dry-run planning, compact reports, and
+stable completed/rejected/no-match/cancelled exit semantics. Added interactive
+and automated release examples, pure runtime tests, compiled-binary contracts,
+a real two-screen PTY integration, CI coverage, architecture notes, and a full
+flow guide.
+
+**Strategy:** Model composition as a directed graph around existing component
+documents rather than adding another UI layer. Each interpolated step still
+passes through registry property resolution and Clap parsing before it calls
+the production component. Maintain separate internal and report contexts so
+sensitive values remain useful to later steps while stdout receives only a
+redaction marker. Validate the whole graph before terminal acquisition, and
+bound transitions so loops are supported without allowing infinite execution.
+
+**Tests executed:** The implementation adds three pure flow tests, six
+compiled-binary flow tests, and one controlling-terminal flow test. GitHub CI
+runs these together with all existing choose, forms, registry, schema, and
+declarative tests, strict Clippy, formatting, and the locked release build.
+
+**How to test:** Run `cargo run -- flow --dry-run
+examples/release-flow.json`, then `cargo run -- flow
+examples/automated-flow.json` for the noninteractive complete path. Finally run
+`cargo run -- flow examples/release-flow.json`, enter a release, choose an
+action, and verify both true and false confirmation routes. See
+`docs/FLOWS.md` for the complete contract.
+
+**Known limitations:** Version 1 remains JSON-only and supports the three
+implemented interactive components. Conditions are intentionally declarative
+rather than an arbitrary expression language. Dry-run shows the primary static
+route but cannot predict conditions or negative branches. Redaction protects
+the report, not a secret deliberately interpolated into visible UI copy.
+
+**Next:** Generate a first-class flow JSON Schema from the component registry,
+then add structured menu items and grouped/disabled choices as the next full
+component vertical slice.
