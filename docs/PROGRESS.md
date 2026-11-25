@@ -148,3 +148,17 @@ or alternate-screen cleanup failures.
 **Known limitations:** This slice intentionally remains single-line; multiline editing, history, shell completion, async validators, and external editor integration belong to future components. Password masking protects the terminal display, not shell history or downstream consumers.
 
 **Next:** Generate registry metadata and JSON Schema from the typed component definitions, then add declarative execution using the same contracts.
+
+## 2026-11-25 · Runtime registry, JSON Schema, and declarative execution
+
+**Changed:** Added `rodtui registry`, `rodtui schema`, and `rodtui run`. Registry output discovers `choose`, `confirm`, and `input` directly from the compiled Clap command graph and exposes flags, semantic dotted aliases, position/repetition, JSON types, enums, defaults, and help. Schema generation emits Draft 2020-12 component variants with strict argument objects. Declarative version-1 JSON documents translate canonical or dotted properties into argv, pass through Clap validation, and dispatch the existing component implementations. Added compact output, component filtering, stdin/file documents, dry-run argv inspection, three checked-in examples, full documentation, noninteractive CLI integration tests, and a real declarative confirmation PTY test.
+
+**Strategy:** Treat the executable CLI graph as the source of truth instead of duplicating component definitions in a second runtime. JSON translation is deliberately narrow and versioned: primitives and arrays become normal flags/positionals, unknown keys fail, and only interactive components can execute. Re-parsing resolved argv delegates conflicts, requirements, enum checks, and defaults back to Clap.
+
+**Tests executed:** The block adds three pure registry/translation tests, five compiled-binary registry/schema/declarative tests, and one controlling-terminal declarative test on top of the choose/forms suites. Coverage includes component discovery, enum/default/alias metadata, strict schemas, arrays, booleans, dotted layout aliases, dry runs, unsupported versions, unknown properties, stdin JSON, output preservation, exit-code preservation, and shared terminal cleanup.
+
+**How to test:** Run `cargo run -- registry --component choose`, `cargo run -- schema --component input`, `cargo run -- run --dry-run examples/input.json`, and `cargo run -- run examples/confirm.json`. See `docs/DECLARATIVE.md`.
+
+**Known limitations:** Version 1 accepts JSON only; YAML/TOML adapters, hosted schema publication, generated language SDKs, migrations, and arbitrary Ratatui widget trees remain future blocks. A document read from stdin consumes that stream, so stdin-backed component values should be embedded in the document or the document should be read from a file.
+
+**Next:** Add declarative multi-component flows with conditional transitions and shared variables while preserving the same registry and terminal contracts.

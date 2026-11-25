@@ -9,6 +9,7 @@ import select
 import struct
 import subprocess
 import sys
+import tempfile
 import termios
 import time
 import unittest
@@ -103,6 +104,26 @@ class FormsTerminalTest(unittest.TestCase):
         self.assertEqual((code, value), (130, b""))
         self.assertIn(b"\x1b[?1049h", screen)
         self.assertIn(b"\x1b[?1049l", screen)
+        self.assertIn(b"\x1b[?2004l", screen)
+
+    def test_declarative_confirm_uses_the_same_interactive_terminal(self):
+        document = {
+            "version": 1,
+            "component": "confirm",
+            "args": {
+                "message": "Ship declarative release?",
+                "theme": "gruvbox",
+                "output": "json",
+            },
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as file:
+            json.dump(document, file)
+            file.flush()
+            code, value, screen = interact(
+                ["run", file.name], b"Ship declarative release?", b"y"
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(value), {"confirmed": True})
         self.assertIn(b"\x1b[?2004l", screen)
 
 

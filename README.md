@@ -80,6 +80,19 @@ release=$(rodtui input --title Release --placeholder v1.0.0 --required)
 provides Unicode cursor editing, validation, password masking, pipeline seeds,
 and noninteractive validation. See [the forms guide](docs/FORMS.md).
 
+The executable registry now supports generators and declarative execution:
+
+```sh
+rodtui registry --component choose
+rodtui schema > rodtui.schema.json
+rodtui run examples/choose.json
+rodtui run --dry-run examples/input.json
+```
+
+Registry metadata, JSON Schema, and resolved JSON documents are derived from
+the same Clap command graph used by the CLI. See the
+[declarative runtime guide](docs/DECLARATIVE.md).
+
 Themes provide semantic tokens that can still be overridden flag by flag:
 
 ```sh

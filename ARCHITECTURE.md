@@ -76,6 +76,14 @@ affirmative, negative, and cancellation as distinct outcomes. Text input stores
 Unicode scalar positions, validation errors, and editing transitions without
 terminal handles, allowing the CLI, tests, and future SDK to share behavior.
 
+Registry introspection walks the compiled Clap command graph rather than
+maintaining a separate hand-written flag list. The resulting metadata drives
+JSON Schema and declarative property resolution. Declarative documents are
+translated into argv and parsed by Clap again before dispatch, preserving the
+same conflicts, requirements, enums, defaults, and component implementation as
+direct CLI use. Only interactive component commands are allowed through this
+path, preventing recursive registry/schema/run documents.
+
 Native coverage targets: Paragraph/Text/Line/Span, Block, List, Table, BarChart, Chart/Dataset, Sparkline, Gauge/LineGauge, Canvas, Calendar, Scrollbar, Clear, Layout/Constraint/Flex/Rect, Style/Modifier/Color, viewports, and stateful rendering. Distinguish native Ratatui widgets from rodtui extensions.
 
 Literal Rust API parity cannot be expressed entirely through flags; functional parity uses schemas and SDK extension points.

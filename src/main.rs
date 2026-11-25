@@ -3,6 +3,7 @@
 //! This first milestone implements a real, interactive `choose` command.
 //! Future milestones will move its reusable logic into the public SDK.
 
+mod catalog;
 mod choice;
 mod choose;
 mod form;
@@ -13,6 +14,7 @@ mod terminal_backend;
 mod terminal_session;
 
 use clap::{Parser, Subcommand};
+use catalog::{RegistryArgs, RunArgs, SchemaArgs};
 use registry::{ChooseArgs, ConfirmArgs, ConfirmOutput, InputArgs, InputOutput};
 use std::io::{self, Write};
 
@@ -38,6 +40,12 @@ enum Commands {
     Confirm(ConfirmArgs),
     /// Edit and validate one line of text.
     Input(InputArgs),
+    /// Describe components and arguments as machine-readable JSON.
+    Registry(RegistryArgs),
+    /// Generate JSON Schema for declarative component documents.
+    Schema(SchemaArgs),
+    /// Execute choose, confirm, or input from a JSON document.
+    Run(RunArgs),
 }
 
 fn main() {
@@ -57,8 +65,12 @@ fn main() {
 /// Parse the command and return its documented process exit code.
 fn run() -> io::Result<i32> {
     let cli = Cli::parse();
+    execute(cli.command)
+}
 
-    match cli.command {
+/// Execute an already parsed command, including declarative commands resolved at runtime.
+fn execute(command: Commands) -> io::Result<i32> {
+    match command {
         Commands::Choose(args) => {
             let items = input::collect_items(&args)?;
             if items.is_empty() {
@@ -111,6 +123,25 @@ fn run() -> io::Result<i32> {
                     Ok(0)
                 }
                 form::FormResult::Cancelled => Ok(130),
+            }
+        }
+        Commands::Registry(args) => {
+            write_stdout(&catalog::registry_json(&args)?)?;
+            Ok(0)
+        }
+        Commands::Schema(args) => {
+            write_stdout(&catalog::schema_json(&args)?)?;
+            Ok(0)
+        }
+        Commands::Run(args) => {
+            let (command, argv) = catalog::resolve_run(&args)?;
+            if args.dry_run {
+                let rendered = serde_json::to_vec_pretty(&argv).map_err(io::Error::other)?;
+                write_stdout(&rendered)?;
+                write_stdout(b"\n")?;
+                Ok(0)
+            } else {
+                execute(command)
             }
         }
     }
