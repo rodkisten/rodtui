@@ -13,8 +13,8 @@ mod registry;
 mod terminal_backend;
 mod terminal_session;
 
-use clap::{Parser, Subcommand};
 use catalog::{RegistryArgs, RunArgs, SchemaArgs};
+use clap::{Parser, Subcommand};
 use registry::{ChooseArgs, ConfirmArgs, ConfirmOutput, InputArgs, InputOutput};
 use std::io::{self, Write};
 

@@ -35,18 +35,26 @@ fn registry_exposes_every_component_and_typed_argument() {
     assert_eq!(registry["version"], 1);
     let components = registry["components"].as_array().expect("components");
     assert_eq!(components.len(), 3);
-    assert!(components.iter().any(|component| component["name"] == "choose"));
-    assert!(components.iter().any(|component| component["name"] == "confirm"));
-    assert!(components.iter().any(|component| component["name"] == "input"));
+    assert!(components
+        .iter()
+        .any(|component| component["name"] == "choose"));
+    assert!(components
+        .iter()
+        .any(|component| component["name"] == "confirm"));
+    assert!(components
+        .iter()
+        .any(|component| component["name"] == "input"));
 }
 
 #[test]
 fn component_schema_contains_enums_defaults_and_rejects_unknown_keys() {
     let output = run(&["schema", "--component", "confirm"], b"");
     assert!(output.status.success());
-    let schema: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("schema JSON");
-    assert_eq!(schema["oneOf"][0]["properties"]["component"]["const"], "confirm");
+    let schema: serde_json::Value = serde_json::from_slice(&output.stdout).expect("schema JSON");
+    assert_eq!(
+        schema["oneOf"][0]["properties"]["component"]["const"],
+        "confirm"
+    );
     let args = &schema["oneOf"][0]["properties"]["args"];
     assert_eq!(args["additionalProperties"], false);
     assert_eq!(args["properties"]["theme"]["default"], "rod");
@@ -121,10 +129,7 @@ fn dry_run_resolves_aliases_and_invalid_documents_fail_with_code_two() {
         "component": "input",
         "args": { "viewport.width": 42, "style.theme": "nord", "accept": true }
     });
-    let dry = run(
-        &["run", "--dry-run", "-"],
-        document.to_string().as_bytes(),
-    );
+    let dry = run(&["run", "--dry-run", "-"], document.to_string().as_bytes());
     assert!(dry.status.success());
     let argv: Vec<String> = serde_json::from_slice(&dry.stdout).expect("argv JSON");
     assert!(argv.windows(2).any(|pair| pair == ["--width", "42"]));

@@ -134,11 +134,7 @@ pub fn registry_json(args: &RegistryArgs) -> io::Result<Vec<u8>> {
 /// Generate a JSON Schema whose properties come from the executable registry.
 pub fn schema_json(args: &SchemaArgs) -> io::Result<Vec<u8>> {
     let registry = registry(args.component.as_deref())?;
-    let variants: Vec<Value> = registry
-        .components
-        .iter()
-        .map(component_schema)
-        .collect();
+    let variants: Vec<Value> = registry.components.iter().map(component_schema).collect();
     let schema = json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "https://rodtui.dev/schema/v1/component.json",
@@ -208,17 +204,17 @@ pub fn document_argv(document: &DeclarativeDocument) -> io::Result<Vec<String>> 
             .ok_or_else(|| invalid(format!("property {key:?} has no declarative flag")))?;
         match argument.get_action() {
             ArgAction::SetTrue => {
-                let enabled = value.as_bool().ok_or_else(|| {
-                    invalid(format!("property {key:?} must be a boolean"))
-                })?;
+                let enabled = value
+                    .as_bool()
+                    .ok_or_else(|| invalid(format!("property {key:?} must be a boolean")))?;
                 if enabled {
                     options.push(format!("--{flag}"));
                 }
             }
             ArgAction::SetFalse => {
-                let enabled = value.as_bool().ok_or_else(|| {
-                    invalid(format!("property {key:?} must be a boolean"))
-                })?;
+                let enabled = value
+                    .as_bool()
+                    .ok_or_else(|| invalid(format!("property {key:?} must be a boolean")))?;
                 if !enabled {
                     options.push(format!("--{flag}"));
                 }
@@ -281,7 +277,10 @@ fn argument_metadata(argument: &Arg) -> ArgumentMetadata {
 }
 
 fn value_type(argument: &Arg) -> ValueType {
-    if matches!(argument.get_action(), ArgAction::SetTrue | ArgAction::SetFalse) {
+    if matches!(
+        argument.get_action(),
+        ArgAction::SetTrue | ArgAction::SetFalse
+    ) {
         ValueType::Boolean
     } else if matches!(
         argument.get_id().as_str(),
@@ -305,8 +304,8 @@ fn semantic_aliases(id: &str) -> Vec<String> {
     let prefix = match id {
         "width" | "height" | "position" | "vertical_position" | "fullscreen" => "viewport",
         "border" | "border_color" | "title_color" | "title_alignment" | "padding" => "block",
-        "foreground" | "background" | "selected_fg" | "selected_bg"
-        | "instruction_fg" | "theme" => "style",
+        "foreground" | "background" | "selected_fg" | "selected_bg" | "instruction_fg"
+        | "theme" => "style",
         "instruction_mode" => "instruction",
         "case" => "search",
         _ => return Vec::new(),
@@ -364,7 +363,10 @@ fn component_schema(component: &ComponentMetadata) -> Value {
 
 fn default_json(value_type: ValueType, value: &str) -> Value {
     match value_type {
-        ValueType::Boolean => value.parse::<bool>().map(Value::Bool).unwrap_or(Value::Null),
+        ValueType::Boolean => value
+            .parse::<bool>()
+            .map(Value::Bool)
+            .unwrap_or(Value::Null),
         ValueType::Integer => value
             .parse::<u64>()
             .map(|value| Value::Number(value.into()))
@@ -399,9 +401,7 @@ fn json_values(key: &str, value: &Value) -> io::Result<Vec<String>> {
                 ))),
             })
             .collect(),
-        Value::Object(_) => Err(invalid(format!(
-            "property {key:?} must not be an object"
-        ))),
+        Value::Object(_) => Err(invalid(format!("property {key:?} must not be an object"))),
     }
 }
 
@@ -417,7 +417,10 @@ fn read_document(path: &PathBuf) -> io::Result<Vec<u8>> {
         fs::read(path).map_err(|error| {
             io::Error::new(
                 error.kind(),
-                format!("could not read declarative file {}: {error}", path.display()),
+                format!(
+                    "could not read declarative file {}: {error}",
+                    path.display()
+                ),
             )
         })
     }
