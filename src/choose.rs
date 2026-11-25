@@ -1,335 +1,728 @@
-//! Pure state and fuzzy matching for the `choose` component.
+//! Interactive selection widget built with Ratatui and Crossterm.
 //!
-//! Terminal rendering and keyboard decoding live elsewhere. Keeping this model
-//! free of terminal handles makes filtering, navigation, and multiselect
-//! deterministic and reusable by the future SDK and declarative runtime.
+//! The pure `Selection` state is independent of the terminal, making it easy
+//! to test navigation without requiring a real TTY.
 
-use std::collections::BTreeSet;
+use std::{borrow::Cow, collections::HashMap, io, process::Command};
 
-use nucleo_matcher::{
-    pattern::{CaseMatching, Normalization, Pattern},
-    Config, Matcher, Utf32Str,
+use crossterm::{
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    terminal::size,
+};
+use ratatui::{
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::{
+        Block, Borders, Clear, List, ListItem, ListState, Padding, Paragraph, Scrollbar,
+        ScrollbarOrientation, ScrollbarState, Wrap,
+    },
+    Frame,
+};
+use unicode_width::UnicodeWidthStr;
+
+use crate::{
+    choice::{ChoiceOutcome, ChoiceState},
+    registry::{
+        resolve_theme, AxisPosition, ChooseArgs, InstructionMode, ListLayout, PreviewPosition,
+        TextAlignment, ThemePalette,
+    },
+    terminal_session::TerminalSession,
 };
 
-use crate::registry::{CaseMode, ChooseArgs};
+const FULL_INSTRUCTION: &str = "↑/↓ or j/k: navigate  •  Enter: select  •  Esc/q: cancel";
+const COMPACT_INSTRUCTION: &str = "↑↓ move  •  ↵ select  •  esc cancel";
+const MINIMAL_INSTRUCTION: &str = "↑↓ move  •  ↵ select";
 
-/// A candidate retains its original input position through filtering and sorting.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Choice {
-    pub original_index: usize,
-    pub value: String,
-}
+const FILTER_FULL_INSTRUCTION: &str =
+    "type: filter  •  ↑/↓: move  •  Enter: select  •  Esc: cancel";
+const FILTER_COMPACT_INSTRUCTION: &str = "type filter  •  ↑↓ move  •  ↵ select";
+const FILTER_MINIMAL_INSTRUCTION: &str = "type filter  •  ↑↓  •  ↵";
+const MULTI_FULL_INSTRUCTION: &str =
+    "↑/↓: move  •  Space/Tab: mark  •  Enter: accept  •  Esc: cancel";
+const MULTI_COMPACT_INSTRUCTION: &str = "↑↓ move  •  space mark  •  ↵ accept";
+const MULTI_MINIMAL_INSTRUCTION: &str = "↑↓  •  space  •  ↵";
 
-/// Result returned by the interactive chooser and consumed by output encoders.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChoiceOutcome {
-    pub query: String,
-    pub selected: Vec<Choice>,
-}
-
-/// Complete interactive state for filtering, navigation, and selection.
+/// Terminal result with distinct success, no-match, and cancellation contracts.
 #[derive(Debug)]
-pub struct ChoiceState {
-    items: Vec<String>,
-    visible: Vec<usize>,
-    match_indices: Vec<Vec<u32>>,
-    cursor: usize,
-    selected: BTreeSet<usize>,
-    query: String,
-    filter_enabled: bool,
-    sort_matches: bool,
-    case: CaseMode,
-    multi: bool,
-    limit: Option<usize>,
+pub enum ChooseResult {
+    Accepted(ChoiceOutcome),
+    NoMatch,
+    Cancelled,
 }
 
-impl ChoiceState {
-    /// Build state from resolved input and validate preselected indices.
-    pub fn new(items: Vec<String>, args: &ChooseArgs) -> Result<Self, String> {
-        if items.is_empty() {
-            return Err("choose requires at least one item from arguments, files, or stdin".into());
-        }
-        if matches!(args.limit, Some(0)) {
-            return Err("--limit must be greater than zero".into());
-        }
-        if args.selected.iter().any(|index| *index >= items.len()) {
-            return Err(format!(
-                "--selected index is outside the input range 0..{}",
-                items.len().saturating_sub(1)
-            ));
-        }
-        let selected: BTreeSet<_> = args.selected.iter().copied().collect();
-        if let Some(limit) = args.limit {
-            if selected.len() > limit {
-                return Err("preselected items exceed --limit".into());
+/// Caches shell preview outputs so navigating back and forth stays instantaneous.
+#[derive(Default)]
+struct PreviewCache {
+    entries: HashMap<String, String>,
+}
+
+impl PreviewCache {
+    fn get_or_run(&mut self, template: &str, item: &str) -> &str {
+        self.entries
+            .entry(item.to_owned())
+            .or_insert_with(|| run_preview_command(template, item))
+    }
+}
+
+fn run_preview_command(template: &str, item: &str) -> String {
+    let escaped = shell_escape(item);
+    let command_str = if template.contains("{}") {
+        template.replace("{}", &escaped)
+    } else {
+        format!("{template} {escaped}")
+    };
+
+    let output = if cfg!(target_os = "windows") {
+        Command::new("cmd").args(["/C", &command_str]).output()
+    } else {
+        Command::new("sh").args(["-c", &command_str]).output()
+    };
+
+    match output {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            if !stdout.is_empty() {
+                stdout.into_owned()
+            } else if !stderr.is_empty() {
+                stderr.into_owned()
+            } else {
+                String::new()
             }
         }
-
-        let filter_enabled = args.filter || args.query.is_some();
-        let mut state = Self {
-            visible: (0..items.len()).collect(),
-            match_indices: Vec::new(),
-            cursor: args.initial.min(items.len().saturating_sub(1)),
-            selected,
-            query: args.query.clone().unwrap_or_default(),
-            filter_enabled,
-            sort_matches: !args.no_sort,
-            case: args.case,
-            multi: args.multi,
-            limit: args.limit,
-            items,
-        };
-        state.rebuild_visible();
-        Ok(state)
+        Err(err) => format!("Preview error: {err}"),
     }
+}
 
-    /// Return all original candidates.
-    pub fn items(&self) -> &[String] {
-        &self.items
+fn shell_escape(input: &str) -> String {
+    if cfg!(target_os = "windows") {
+        format!("\"{}\"", input.replace('"', "\\\""))
+    } else {
+        format!("'{}'", input.replace('\'', "'\\''"))
     }
+}
 
-    /// Return original indices in their current visible order.
-    pub fn visible_indices(&self) -> &[usize] {
-        &self.visible
+/// Run the complete choose interaction or accept a unique filtered match directly.
+pub fn choose(args: &ChooseArgs, state: ChoiceState) -> io::Result<ChooseResult> {
+    if args.select_1 {
+        return Ok(match state.visible_indices().len() {
+            0 => ChooseResult::NoMatch,
+            1 => ChooseResult::Accepted(
+                state
+                    .accept()
+                    .expect("one visible item always has an accepted outcome"),
+            ),
+            _ => interactive_choose(args, state)?,
+        });
     }
+    interactive_choose(args, state)
+}
 
-    /// Return the matched character indices for a visible row (for `hl` / `hl+` styling).
-    pub fn match_indices(&self, visible_index: usize) -> &[u32] {
-        self.match_indices
-            .get(visible_index)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
-    }
+/// Own the terminal event loop while the pure state handles all transitions.
+fn interactive_choose(args: &ChooseArgs, mut state: ChoiceState) -> io::Result<ChooseResult> {
+    let terminal_width = size().map(|(width, _)| width).unwrap_or(80);
+    let mut geometry = Geometry::resolve(args, &state, terminal_width);
+    let theme = resolve_theme(args.theme, &args.style, &args.block);
+    let mut session = TerminalSession::new(
+        args.viewport.fullscreen,
+        geometry.viewport_height,
+        "interactive choose requires stderr connected to a terminal; use --select-1 for noninteractive selection",
+    )?;
+    let mut list_state = ListState::default().with_selected(selected_cursor(&state));
+    let mut preview_cache = PreviewCache::default();
 
-    /// Return the current search query.
-    pub fn query(&self) -> &str {
-        &self.query
-    }
+    loop {
+        let preview_text = args.preview.as_deref().and_then(|cmd| {
+            let cursor = selected_cursor(&state)?;
+            let original_index = *state.visible_indices().get(cursor)?;
+            let item = state.items().get(original_index)?;
+            Some(preview_cache.get_or_run(cmd, item).to_owned())
+        });
 
-    /// Whether keyboard characters edit a fuzzy query.
-    pub fn filter_enabled(&self) -> bool {
-        self.filter_enabled
-    }
+        session.terminal.draw(|frame| {
+            render(
+                frame,
+                args,
+                &state,
+                geometry,
+                theme,
+                &mut list_state,
+                preview_text.as_deref(),
+            );
+        })?;
 
-    /// Whether the component accepts multiple selected items.
-    pub fn multi(&self) -> bool {
-        self.multi
-    }
-
-    /// Current cursor position within the visible result list.
-    pub fn cursor(&self) -> usize {
-        self.cursor
-    }
-
-    /// Number of selected original items.
-    pub fn selected_count(&self) -> usize {
-        self.selected.len()
-    }
-
-    /// Check whether an original item index is selected.
-    pub fn is_selected(&self, original_index: usize) -> bool {
-        self.selected.contains(&original_index)
-    }
-
-    /// Return the original index under the cursor.
-    pub fn current_original_index(&self) -> Option<usize> {
-        self.visible.get(self.cursor).copied()
-    }
-
-    /// Move to the next visible result with wrap-around navigation.
-    pub fn next(&mut self) {
-        if !self.visible.is_empty() {
-            self.cursor = (self.cursor + 1) % self.visible.len();
-        }
-    }
-
-    /// Move to the previous visible result with wrap-around navigation.
-    pub fn previous(&mut self) {
-        if !self.visible.is_empty() {
-            self.cursor = (self.cursor + self.visible.len() - 1) % self.visible.len();
-        }
-    }
-
-    /// Toggle the current item while respecting the optional selection limit.
-    pub fn toggle_current(&mut self) -> bool {
-        let Some(index) = self.current_original_index() else {
-            return false;
-        };
-        if self.selected.remove(&index) {
-            return true;
-        }
-        if self.limit.is_some_and(|limit| self.selected.len() >= limit) {
-            return false;
-        }
-        self.selected.insert(index);
-        true
-    }
-
-    /// Append one character to the fuzzy query and rebuild visible results.
-    pub fn push_query(&mut self, character: char) {
-        if self.filter_enabled {
-            self.query.push(character);
-            self.rebuild_visible();
-        }
-    }
-
-    /// Remove the final Unicode scalar from the fuzzy query.
-    pub fn pop_query(&mut self) {
-        if self.filter_enabled && self.query.pop().is_some() {
-            self.rebuild_visible();
-        }
-    }
-
-    /// Clear the current fuzzy query.
-    pub fn clear_query(&mut self) {
-        if self.filter_enabled && !self.query.is_empty() {
-            self.query.clear();
-            self.rebuild_visible();
-        }
-    }
-
-    /// Append sanitized paste text to the query.
-    pub fn append_query(&mut self, text: &str) {
-        if self.filter_enabled {
-            self.query.extend(text.chars().map(|character| {
-                if character.is_control() {
-                    ' '
-                } else {
-                    character
+        match event::read()? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                let control = key.modifiers.contains(KeyModifiers::CONTROL);
+                match key.code {
+                    KeyCode::Down | KeyCode::Char('n') if control => state.next(),
+                    KeyCode::Up | KeyCode::Char('p') if control => state.previous(),
+                    KeyCode::Down => state.next(),
+                    KeyCode::Up => state.previous(),
+                    KeyCode::Enter => {
+                        return Ok(state
+                            .accept()
+                            .map(ChooseResult::Accepted)
+                            .unwrap_or(ChooseResult::NoMatch));
+                    }
+                    KeyCode::Esc => return Ok(ChooseResult::Cancelled),
+                    KeyCode::Char('c') if control => return Ok(ChooseResult::Cancelled),
+                    KeyCode::Char('u') if control => state.clear_query(),
+                    KeyCode::Backspace => state.pop_query(),
+                    KeyCode::Tab if state.multi() => {
+                        state.toggle_current();
+                        state.next();
+                    }
+                    KeyCode::BackTab if state.multi() => {
+                        state.toggle_current();
+                        state.previous();
+                    }
+                    KeyCode::Char(' ') if state.multi() && !state.filter_enabled() => {
+                        state.toggle_current();
+                    }
+                    KeyCode::Char(character) if state.filter_enabled() && !control => {
+                        state.push_query(character);
+                    }
+                    KeyCode::Char('j') if !state.filter_enabled() => state.next(),
+                    KeyCode::Char('k') if !state.filter_enabled() => state.previous(),
+                    KeyCode::Char('q') if !state.filter_enabled() => {
+                        return Ok(ChooseResult::Cancelled);
+                    }
+                    _ => {}
                 }
-            }));
-            self.rebuild_visible();
+            }
+            Event::Paste(text) => state.append_query(&text),
+            Event::Resize(width, _) => {
+                geometry = Geometry::resolve(args, &state, width);
+            }
+            _ => {}
+        }
+
+        list_state.select(selected_cursor(&state));
+    }
+}
+
+fn selected_cursor(state: &ChoiceState) -> Option<usize> {
+    (!state.visible_indices().is_empty()).then_some(state.cursor())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Geometry {
+    width: u16,
+    viewport_height: u16,
+    instructions: bool,
+}
+
+impl Geometry {
+    fn resolve(args: &ChooseArgs, state: &ChoiceState, terminal_width: u16) -> Self {
+        let border = args.block.border.inset();
+        let prompt_width = UnicodeWidthStr::width(args.prompt.as_str()) as u16;
+        let longest_item = state
+            .items()
+            .iter()
+            .map(|item| UnicodeWidthStr::width(item.as_str()) as u16)
+            .max()
+            .unwrap_or(0);
+        let list_width = longest_item
+            .saturating_add(prompt_width)
+            .saturating_add(args.block.padding.saturating_mul(2))
+            .saturating_add(border);
+        let title_width = (UnicodeWidthStr::width(args.title.as_str()) as u16)
+            .saturating_add(args.block.padding.saturating_mul(2))
+            .saturating_add(border);
+        let preferred_instruction = preferred_instruction(args, state);
+        let instruction_width = if args.no_instructions {
+            0
+        } else {
+            UnicodeWidthStr::width(preferred_instruction) as u16
+        };
+        let base_natural_width = list_width
+            .max(title_width)
+            .max(instruction_width)
+            .clamp(24, 72);
+        let natural_width = if args.preview.is_some() {
+            base_natural_width.saturating_mul(2).min(terminal_width)
+        } else {
+            base_natural_width
+        };
+        let width = args
+            .viewport
+            .width
+            .unwrap_or(natural_width)
+            .clamp(1, terminal_width.max(1));
+
+        let instructions = instruction_text(args, state, width).is_some();
+        let natural_list_height = (state.items().len() as u16).clamp(1, 10);
+        let search_height = u16::from(state.filter_enabled());
+        let mut natural_panel_height = natural_list_height
+            .saturating_add(search_height)
+            .saturating_add(border);
+        if args.preview.is_some()
+            && matches!(
+                args.preview_position,
+                PreviewPosition::Top | PreviewPosition::Bottom
+            )
+        {
+            natural_panel_height = natural_panel_height.saturating_add(6);
+        }
+        let requested_total = args
+            .viewport
+            .height
+            .unwrap_or_else(|| natural_panel_height.saturating_add(u16::from(instructions)));
+        let minimum_height = border
+            .saturating_add(1)
+            .saturating_add(search_height)
+            .saturating_add(u16::from(instructions));
+        let viewport_height = requested_total.max(minimum_height);
+        Self {
+            width,
+            viewport_height,
+            instructions,
         }
     }
+}
 
-    /// Resolve selected values in stable original-input order.
-    pub fn accept(&self) -> Option<ChoiceOutcome> {
-        let indices: Vec<usize> = if self.multi && !self.selected.is_empty() {
-            self.selected.iter().copied().collect()
+fn render(
+    frame: &mut Frame<'_>,
+    args: &ChooseArgs,
+    state: &ChoiceState,
+    geometry: Geometry,
+    theme: ThemePalette,
+    list_state: &mut ListState,
+    preview_text: Option<&str>,
+) {
+    let area = frame.area();
+    frame.render_widget(
+        Block::default().style(Style::default().bg(theme.background)),
+        area,
+    );
+
+    let content_height = geometry.viewport_height.min(area.height);
+    let content = positioned_rect(
+        area,
+        geometry.width.min(area.width),
+        content_height,
+        args.viewport.position,
+        if args.viewport.fullscreen {
+            args.viewport.vertical_position
         } else {
-            vec![self.current_original_index()?]
-        };
-        let selected = indices
-            .into_iter()
-            .map(|original_index| Choice {
-                original_index,
-                value: self.items[original_index].clone(),
-            })
-            .collect();
-        Some(ChoiceOutcome {
-            query: self.query.clone(),
-            selected,
+            AxisPosition::Start
+        },
+    );
+    frame.render_widget(Clear, content);
+
+    let chunks = if geometry.instructions && content.height > 1 {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .split(content)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(0)])
+            .split(content)
+    };
+
+    let (list_pane, preview_pane) = if args.preview.is_some() {
+        let ratio = args.preview_size.clamp(10, 90);
+        match args.preview_position {
+            PreviewPosition::Right => {
+                let panes = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(100 - ratio),
+                        Constraint::Percentage(ratio),
+                    ])
+                    .split(chunks[0]);
+                (panes[0], Some(panes[1]))
+            }
+            PreviewPosition::Left => {
+                let panes = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(ratio),
+                        Constraint::Percentage(100 - ratio),
+                    ])
+                    .split(chunks[0]);
+                (panes[1], Some(panes[0]))
+            }
+            PreviewPosition::Bottom => {
+                let panes = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Percentage(100 - ratio),
+                        Constraint::Percentage(ratio),
+                    ])
+                    .split(chunks[0]);
+                (panes[0], Some(panes[1]))
+            }
+            PreviewPosition::Top => {
+                let panes = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Percentage(ratio),
+                        Constraint::Percentage(100 - ratio),
+                    ])
+                    .split(chunks[0]);
+                (panes[1], Some(panes[0]))
+            }
+        }
+    } else {
+        (chunks[0], None)
+    };
+
+    let borders = if args.block.border.ratatui().is_some() {
+        Borders::ALL
+    } else {
+        Borders::NONE
+    };
+    let status = if state.multi() {
+        format!(
+            "{}/{} · {} selected ",
+            state.visible_indices().len(),
+            state.items().len(),
+            state.selected_count()
+        )
+    } else if state.filter_enabled() {
+        format!("{}/{} ", state.visible_indices().len(), state.items().len())
+    } else {
+        String::new()
+    };
+    let mut block = Block::default()
+        .title(args.title.as_str())
+        .title_alignment(match args.block.title_alignment {
+            TextAlignment::Left => Alignment::Left,
+            TextAlignment::Center => Alignment::Center,
+            TextAlignment::Right => Alignment::Right,
         })
+        .title_style(
+            Style::default()
+                .fg(theme.title)
+                .add_modifier(Modifier::BOLD),
+        )
+        .borders(borders)
+        .border_style(Style::default().fg(theme.border))
+        .padding(Padding::horizontal(args.block.padding))
+        .style(Style::default().fg(theme.foreground).bg(theme.background));
+    if !status.is_empty() {
+        block = block.title(Line::from(status).right_aligned());
+    }
+    if let Some(border_type) = args.block.border.ratatui() {
+        block = block.border_type(border_type);
     }
 
-    /// Rebuild matches while preserving the currently focused original item.
-    fn rebuild_visible(&mut self) {
-        let focused = self.current_original_index();
-        if !self.filter_enabled || self.query.is_empty() {
-            self.visible = (0..self.items.len()).collect();
-            self.match_indices.clear();
-        } else {
-            let case = match self.case {
-                CaseMode::Smart => CaseMatching::Smart,
-                CaseMode::Sensitive => CaseMatching::Respect,
-                CaseMode::Insensitive => CaseMatching::Ignore,
-            };
-            let pattern = Pattern::parse(&self.query, case, Normalization::Smart);
-            let mut matcher = Matcher::new(Config::DEFAULT);
-            let mut scored = Vec::new();
-            let mut buffer = Vec::new();
-            for (index, item) in self.items.iter().enumerate() {
-                let mut indices = Vec::new();
-                if let Some(score) = pattern.indices(
-                    Utf32Str::new(item.as_str(), &mut buffer),
-                    &mut matcher,
-                    &mut indices,
-                ) {
-                    indices.sort_unstable();
-                    indices.dedup();
-                    scored.push((index, score, indices));
-                }
+    let body = block.inner(list_pane);
+    frame.render_widget(block, list_pane);
+
+    let (search_area, items_area) = if state.filter_enabled() && body.height > 1 {
+        match args.layout {
+            ListLayout::Reverse => {
+                let parts = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(1), Constraint::Min(1)])
+                    .split(body);
+                (parts[0], parts[1])
             }
-            if self.sort_matches {
-                scored.sort_by(
-                    |(left_index, left_score, _), (right_index, right_score, _)| {
-                        right_score
-                            .cmp(left_score)
-                            .then_with(|| left_index.cmp(right_index))
-                    },
-                );
-            }
-            self.visible = Vec::with_capacity(scored.len());
-            self.match_indices = Vec::with_capacity(scored.len());
-            for (index, _, indices) in scored {
-                self.visible.push(index);
-                self.match_indices.push(indices);
+            ListLayout::Default => {
+                let parts = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(1), Constraint::Length(1)])
+                    .split(body);
+                (parts[1], parts[0])
             }
         }
+    } else {
+        (Rect::default(), body)
+    };
 
-        self.cursor = focused
-            .and_then(|index| {
-                self.visible
-                    .iter()
-                    .position(|candidate| *candidate == index)
-            })
-            .unwrap_or(0)
-            .min(self.visible.len().saturating_sub(1));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use clap::Parser;
-
-    use super::ChoiceState;
-    use crate::{Cli, Commands};
-
-    fn args(arguments: &[&str]) -> crate::registry::ChooseArgs {
-        let cli = Cli::try_parse_from(arguments).expect("valid test arguments");
-        let Commands::Choose(args) = cli.command else {
-            panic!("expected choose command")
+    if state.filter_enabled() && search_area.height > 0 {
+        let query = if state.query().is_empty() {
+            Span::styled("type to filter…", Style::default().fg(theme.muted))
+        } else {
+            Span::styled(state.query(), Style::default().fg(theme.foreground))
         };
-        args
-    }
-
-    #[test]
-    fn fuzzy_filter_preserves_original_indices() {
-        let args = args(&["rodtui", "choose", "--filter", "--query", "bld"]);
-        let state = ChoiceState::new(vec!["Deploy".into(), "Build".into(), "Test".into()], &args)
-            .expect("state");
-        assert_eq!(state.visible_indices(), &[1]);
-        assert_eq!(state.match_indices(0), &[0, 3, 4]);
-        assert_eq!(
-            state.accept().expect("selection").selected[0].original_index,
-            1
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    "⌕ ",
+                    Style::default()
+                        .fg(theme.prompt)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                query,
+                Span::styled("▏", Style::default().fg(theme.selected_background)),
+            ]))
+            .style(Style::default().bg(theme.background)),
+            search_area,
         );
     }
 
-    #[test]
-    fn multiselect_enforces_limit_and_returns_input_order() {
-        let args = args(&[
-            "rodtui",
-            "choose",
-            "--multi",
-            "--limit",
-            "2",
-            "--selected",
-            "2",
-            "--selected",
-            "0",
-        ]);
-        let mut state =
-            ChoiceState::new(vec!["Deploy".into(), "Build".into(), "Test".into()], &args)
-                .expect("state");
-        state.next();
-        assert!(!state.toggle_current());
-        let outcome = state.accept().expect("selection");
-        let indices: Vec<_> = outcome
-            .selected
-            .into_iter()
-            .map(|choice| choice.original_index)
-            .collect();
-        assert_eq!(indices, vec![0, 2]);
+    let active_cursor = selected_cursor(state);
+
+    let rows = state
+        .visible_indices()
+        .iter()
+        .enumerate()
+        .map(|(visible_idx, original_index)| {
+            let selected = state.is_selected(*original_index);
+            let is_active = active_cursor == Some(visible_idx);
+            let marker = if state.multi() {
+                if selected {
+                    args.selected_prefix.as_str()
+                } else {
+                    args.unselected_prefix.as_str()
+                }
+            } else {
+                ""
+            };
+            let marker_style = if selected {
+                Style::default()
+                    .fg(theme.title)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.muted)
+            };
+
+            let text = display_record(&state.items()[*original_index]);
+            let match_color = if is_active {
+                theme.selected_match_foreground
+            } else {
+                theme.match_foreground
+            };
+
+            let mut spans = vec![Span::styled(marker, marker_style)];
+            spans.extend(highlight_indexed_spans(
+                &text,
+                state.match_indices(visible_idx),
+                Style::default()
+                    .fg(match_color)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            ));
+
+            let item = ListItem::new(Line::from(spans));
+            if selected {
+                item.style(
+                    Style::default()
+                        .fg(theme.title)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                item
+            }
+        });
+
+    let list = List::new(rows)
+        .highlight_symbol(Span::styled(
+            args.prompt.as_str(),
+            Style::default()
+                .fg(theme.prompt)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .highlight_spacing(args.style.highlight_spacing.into())
+        .highlight_style(
+            Style::default()
+                .fg(theme.selected_foreground)
+                .bg(theme.selected_background)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    if state.visible_indices().is_empty() {
+        frame.render_widget(
+            Paragraph::new("No matches")
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(theme.muted).bg(theme.background)),
+            items_area,
+        );
+    } else {
+        frame.render_stateful_widget(list, items_area, list_state);
+
+        if args.style.scrollbar && state.visible_indices().len() > items_area.height as usize {
+            let mut scroll_state = ScrollbarState::new(state.visible_indices().len())
+                .position(active_cursor.unwrap_or(0));
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .track_symbol(Some("│"))
+                .thumb_symbol("█")
+                .style(Style::default().fg(theme.border));
+            frame.render_stateful_widget(scrollbar, items_area, &mut scroll_state);
+        }
+    }
+
+    if let Some(p_area) = preview_pane {
+        let mut preview_block = Block::default()
+            .title(" Preview ")
+            .title_style(
+                Style::default()
+                    .fg(theme.title)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .borders(borders)
+            .border_style(Style::default().fg(theme.border))
+            .padding(Padding::horizontal(args.block.padding))
+            .style(Style::default().fg(theme.foreground).bg(theme.background));
+        if let Some(border_type) = args.block.border.ratatui() {
+            preview_block = preview_block.border_type(border_type);
+        }
+
+        let content = preview_text.unwrap_or("");
+        let mut paragraph = Paragraph::new(content)
+            .block(preview_block)
+            .style(Style::default().fg(theme.foreground).bg(theme.background));
+        if args.preview_wrap {
+            paragraph = paragraph.wrap(Wrap { trim: false });
+        }
+        frame.render_widget(paragraph, p_area);
+    }
+
+    if geometry.instructions && chunks[1].height > 0 {
+        let instruction = instruction_text(args, state, content.width)
+            .expect("geometry reserves a row only when instruction text exists");
+        frame.render_widget(
+            Paragraph::new(instruction.as_ref())
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(theme.muted).bg(theme.background)),
+            chunks[1],
+        );
+    }
+}
+
+fn highlight_indexed_spans<'a>(
+    text: &'a str,
+    indices: &[u32],
+    highlight_style: Style,
+) -> Vec<Span<'a>> {
+    if indices.is_empty() {
+        return vec![Span::raw(text)];
+    }
+
+    let mut spans = Vec::new();
+    let mut next_match = 0;
+    let mut plain_start = 0;
+
+    for (char_idx, (byte_idx, ch)) in text.char_indices().enumerate() {
+        if indices.get(next_match).copied() == Some(char_idx as u32) {
+            if plain_start < byte_idx {
+                spans.push(Span::raw(&text[plain_start..byte_idx]));
+            }
+            let next_byte = byte_idx + ch.len_utf8();
+            spans.push(Span::styled(&text[byte_idx..next_byte], highlight_style));
+            plain_start = next_byte;
+            next_match += 1;
+        }
+    }
+
+    if plain_start < text.len() {
+        spans.push(Span::raw(&text[plain_start..]));
+    }
+
+    spans
+}
+
+fn instruction_text<'a>(
+    args: &'a ChooseArgs,
+    state: &ChoiceState,
+    width: u16,
+) -> Option<Cow<'a, str>> {
+    if args.no_instructions || matches!(args.instruction_mode, InstructionMode::Hidden) {
+        return None;
+    }
+    if let Some(custom) = args.instruction.as_deref() {
+        return (!custom.is_empty()).then_some(Cow::Borrowed(custom));
+    }
+
+    let (full, compact, minimal) = instruction_variants(state);
+    let text = match args.instruction_mode {
+        InstructionMode::Full => full,
+        InstructionMode::Compact => compact,
+        InstructionMode::Minimal => minimal,
+        InstructionMode::Hidden => return None,
+        InstructionMode::Auto => {
+            if width >= UnicodeWidthStr::width(full) as u16 {
+                full
+            } else if width >= UnicodeWidthStr::width(compact) as u16 {
+                compact
+            } else {
+                minimal
+            }
+        }
+    };
+    Some(Cow::Borrowed(text))
+}
+
+fn preferred_instruction<'a>(args: &'a ChooseArgs, state: &ChoiceState) -> &'a str {
+    if let Some(custom) = args.instruction.as_deref() {
+        return custom;
+    }
+    let (full, compact, minimal) = instruction_variants(state);
+    match args.instruction_mode {
+        InstructionMode::Auto | InstructionMode::Full => full,
+        InstructionMode::Compact => compact,
+        InstructionMode::Minimal => minimal,
+        InstructionMode::Hidden => "",
+    }
+}
+
+fn instruction_variants(state: &ChoiceState) -> (&'static str, &'static str, &'static str) {
+    if state.multi() && state.filter_enabled() {
+        (
+            "type: filter  •  ↑/↓: move  •  Tab: mark  •  Enter: accept",
+            "type filter  •  Tab mark  •  ↵ accept",
+            "Tab mark  •  ↵ accept",
+        )
+    } else if state.multi() {
+        (
+            MULTI_FULL_INSTRUCTION,
+            MULTI_COMPACT_INSTRUCTION,
+            MULTI_MINIMAL_INSTRUCTION,
+        )
+    } else if state.filter_enabled() {
+        (
+            FILTER_FULL_INSTRUCTION,
+            FILTER_COMPACT_INSTRUCTION,
+            FILTER_MINIMAL_INSTRUCTION,
+        )
+    } else {
+        (FULL_INSTRUCTION, COMPACT_INSTRUCTION, MINIMAL_INSTRUCTION)
+    }
+}
+
+fn display_record(value: &str) -> Cow<'_, str> {
+    if !value.chars().any(char::is_control) {
+        return Cow::Borrowed(value);
+    }
+    Cow::Owned(
+        value
+            .chars()
+            .map(|ch| if ch.is_control() { '\u{FFFD}' } else { ch })
+            .collect(),
+    )
+}
+
+fn positioned_rect(
+    area: Rect,
+    width: u16,
+    height: u16,
+    horizontal: AxisPosition,
+    vertical: AxisPosition,
+) -> Rect {
+    let x = aligned_offset(area.width, width, horizontal);
+    let y = aligned_offset(area.height, height, vertical);
+    Rect::new(
+        area.x.saturating_add(x),
+        area.y.saturating_add(y),
+        width,
+        height,
+    )
+    .inner(Margin::new(0, 0))
+}
+
+fn aligned_offset(available: u16, requested: u16, position: AxisPosition) -> u16 {
+    let free = available.saturating_sub(requested);
+    match position {
+        AxisPosition::Start => 0,
+        AxisPosition::Center => free / 2,
+        AxisPosition::End => free,
     }
 }
