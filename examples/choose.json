@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "component": "choose",
+  "args": {
+    "items": ["Deploy", "Build", "Test"],
+    "filter": true,
+    "multi": true,
+    "style.theme": "dracula",
+    "title": "Release tasks",
+    "output": "json"
+  }
+}

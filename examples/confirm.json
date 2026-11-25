@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "component": "confirm",
+  "args": {
+    "message": "Deploy production?",
+    "affirmative": "Deploy",
+    "negative": "Cancel",
+    "default": "no",
+    "style.theme": "gruvbox",
+    "output": "json"
+  }
+}

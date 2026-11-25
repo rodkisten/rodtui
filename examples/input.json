@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "component": "input",
+  "args": {
+    "title": "Release name",
+    "placeholder": "v1.0.0",
+    "required": true,
+    "min_length": 3,
+    "char_limit": 32,
+    "style.theme": "nord",
+    "output": "json"
+  }
+}

@@ -33,10 +33,17 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Rust lint
         if: steps.workspace.outputs.exists == 'true'
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Rust tests
         if: steps.workspace.outputs.exists == 'true'
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
+      - name: Interactive chooser with a controlling terminal
+        if: steps.workspace.outputs.exists == 'true'
+        run: |
+          cargo build --locked
+          python3 tests/choose_pty.py target/debug/rodtui
+          python3 tests/forms_pty.py target/debug/rodtui
+          python3 tests/flow_pty.py target/debug/rodtui
       - name: Rust release build
         if: steps.workspace.outputs.exists == 'true'
-        run: cargo build --release
+        run: cargo build --release --locked

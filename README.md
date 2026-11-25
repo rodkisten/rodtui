@@ -15,7 +15,10 @@
 (_____)
 ```
 
-> **Status: inception / documentation-first.** Commands shown below are the intended public API, not claims that a working binary has shipped.
+> **Status: early alpha.** `choose`, `confirm`, `input`, registry/schema
+> introspection, declarative execution, and conditional multi-step flows are
+> implemented. Other commands shown below describe the intended public API;
+> no release binary has shipped yet.
 
 ## Why rodtui?
 
@@ -34,6 +37,117 @@ rodtui table --file users.json --query '.users[]' --columns name,email,status
 rodtui run dashboard.yaml
 rodtui playground
 ```
+
+## Working feature: `choose`
+
+`choose` now covers a complete shell-to-TUI-to-stdout workflow:
+
+```sh
+printf 'Deploy\nBuild\nTest\n' |
+  rodtui choose --filter --multi --output json --theme rod
+```
+
+It accepts positional items, repeatable files, line or NUL-delimited stdin,
+live fuzzy search powered by `nucleo-matcher`, stable multiselection, original
+indices, text/JSON output, deduplication, preselection, themes, responsive
+instructions, inline/fullscreen viewports, and noninteractive `--select-1`.
+See [the complete choose guide](docs/CHOOSE.md) for keys, contracts, exit codes,
+and pipeline examples.
+
+The default viewport is compact and inline, so a component occupies only the
+rows it needs and returns control to the surrounding shell. Fullscreen mode is
+explicit:
+
+```sh
+rodtui choose Deploy Build Test \
+  --title "Choose a task" \
+  --width 48 \
+  --border rounded \
+  --border-color '#665c99' \
+  --selected-bg '#7c5cff'
+
+rodtui choose Deploy Build Test --fullscreen
+```
+
+The same terminal and theme contracts now cover complete form interactions:
+
+```sh
+if rodtui confirm 'Deploy production?' --theme dracula; then
+  ./deploy.sh
+fi
+
+release=$(rodtui input --title Release --placeholder v1.0.0 --required)
+```
+
+`confirm` provides yes/no exit semantics and optional text/JSON output. `input`
+provides Unicode cursor editing, validation, password masking, pipeline seeds,
+and noninteractive validation. See [the forms guide](docs/FORMS.md).
+
+The executable registry now supports generators and declarative execution:
+
+```sh
+rodtui registry --component choose
+rodtui schema > rodtui.schema.json
+rodtui run examples/choose.json
+rodtui run --dry-run examples/input.json
+rodtui flow --dry-run examples/release-flow.json
+rodtui flow examples/release-flow.json
+```
+
+Registry metadata, JSON Schema, and resolved JSON documents are derived from
+the same Clap command graph used by the CLI. See the
+[declarative runtime guide](docs/DECLARATIVE.md).
+
+Complete interactions can be composed into one versioned flow without shell
+glue:
+
+```json
+{
+  "version": 1,
+  "variables": { "environment": "production" },
+  "steps": [
+    {
+      "id": "release",
+      "component": "input",
+      "save_as": "release",
+      "args": { "title": "Release", "required": true }
+    },
+    {
+      "id": "approval",
+      "component": "confirm",
+      "args": {
+        "message": "Deploy ${variables.release.value} to ${variables.environment}?"
+      }
+    }
+  ]
+}
+```
+
+`flow` adds shared variables, typed interpolation, conditional steps,
+affirmative/negative branches, secret redaction, cycle protection, dry-run
+validation, and one consolidated JSON report. Each step still resolves through
+the normal registry and executes the production component. See the
+[flow guide](docs/FLOWS.md) and the interactive
+[`release-flow.json`](examples/release-flow.json).
+
+Themes provide semantic tokens that can still be overridden flag by flag:
+
+```sh
+rodtui choose Deploy Build Test --theme dracula
+rodtui choose Deploy Build Test --theme nord --selected-bg '#7c5cff'
+```
+
+Available presets: `rod`, `graphite`, `dracula`, `nord`, `gruvbox`, and
+`monochrome`. Instructions automatically shorten on narrow terminals; use
+`--instruction-mode full|compact|minimal|hidden` or `--instruction` to control
+the line explicitly.
+
+Common flags use familiar fzf/Gum-style names. Advanced aliases mirror the
+typed component model, such as `--viewport.width`, `--block.border`, and
+`--style.selected-bg`. Colors accept names, `#RRGGBB`, and `ansi:N` values.
+The versioned component registry is intended to generate CLI arguments,
+schemas, SDK types, documentation, and a Ratatui coverage matrix from the same
+definitions.
 
 The CLI will support interactive TTY usage, stdin pipelines, structured stdout, script-friendly exit codes, and machine-readable schemas. Output to stdout is reserved for selected values/data; UI rendering uses a controlling TTY.
 
@@ -91,12 +205,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical specification: cra
 | Phase | Scope | Exit criteria | Status |
 | --- | --- | --- | --- |
 | 0 · Foundation | Architecture, contributor rules, CI, release/install design | Reviewed docs and bootstrap checks | 🟡 In progress |
-| 1 · Kernel | Cargo workspace, Ratatui, Crossterm backend, terminal guards, test backend | Runnable CLI and terminal restoration tests | ⬜ Planned |
-| 2 · Gum baseline | choose, filter, input, confirm, write, table, style, spin, pager | Scriptable commands with contract tests | ⬜ Planned |
+| 1 · Kernel | Cargo workspace, Ratatui, Crossterm backend, terminal guards, test backend | Runnable CLI and terminal restoration tests | 🟡 In progress |
+| 2 · Gum baseline | choose, filter, input, confirm, write, table, style, spin, pager | Scriptable commands with contract tests | 🟡 In progress (`choose` vertical slice) |
 | 3 · Ratatui coverage | Native widgets, styles, constraints, viewports, state adapters | Versioned coverage matrix and snapshots | ⬜ Planned |
 | 4 · Interactive composition | Menus, tree, palettes, forms, focus, keyboard/mouse | Complex navigation demos | ⬜ Planned |
 | 5 · Data engine | JSON/JSONL/CSV, jq-like queries, streaming/windowing | Streaming correctness and bounded-memory tests | ⬜ Planned |
-| 6 · Declarative runtime | YAML/JSON screens, bindings, actions, hot reload | Dashboard example and schema validation | ⬜ Planned |
+| 6 · Declarative runtime | YAML/JSON screens, bindings, actions, hot reload | Dashboard example and schema validation | 🟡 In progress (JSON components and conditional flows) |
 | 7 · Effects & IPC | Animations, async jobs, Unix sockets, live updates | Smooth and cancellable live dashboards | ⬜ Planned |
 | 8 · Playground | Component gallery, property inspector, event/state debug | Usable end-to-end demo | ⬜ Planned |
 | 9 · Stable distribution | Cross-platform artifacts, checksum verification, changelog | curl installer and reproducible releases | ⬜ Planned |
@@ -149,6 +263,10 @@ Never silently execute arbitrary shell commands from untrusted YAML/JSON. Action
 
 - [Architecture](ARCHITECTURE.md)
 - [Progress](docs/PROGRESS.md)
+- [`choose` guide](docs/CHOOSE.md)
+- [Forms guide](docs/FORMS.md)
+- [Declarative runtime guide](docs/DECLARATIVE.md)
+- [Multi-step flow guide](docs/FLOWS.md)
 - [GitHub repository](https://github.com/rodkisten/rodtui)
 - [Releases](https://github.com/rodkisten/rodtui/releases)
 

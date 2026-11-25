@@ -34,6 +34,13 @@ Begin with fewer crates if necessary; split only at proven API boundaries. The p
 
 Use Ratatui as rendering abstraction and Crossterm as default terminal/event backend. The backend adapter is isolated. Terminal lifecycle uses RAII guards and explicit restoration on normal exits, recoverable errors, and panic hooks where safe. Render to controlling TTY, not stdout, when stdout carries results. No TTY: return a clear error or use an explicit noninteractive mode. Detect capabilities and honor NO_COLOR and reduced-motion configuration.
 
+Interactive component commands default to a compact inline viewport sized from
+their content. Fullscreen mode and the alternate screen are explicit. This
+keeps short selections usable in mobile terminals and preserves surrounding
+shell context while still allowing dashboards to own the complete screen.
+Instruction copy and other secondary content use terminal-width breakpoints so
+components retain their meaning without overflowing narrow mobile viewports.
+
 Backends: Crossterm (default), TestBackend (tests), Termwiz (possible future feature). Support inline, fullscreen and fixed viewports. Avoid mixing incompatible Crossterm versions.
 
 ## 4. CLI parsing
@@ -46,6 +53,60 @@ Precedence: defaults < user config < project config < environment < CLI flags. S
 
 A versioned registry is the source of truth for widget IDs, arguments, property types, defaults, validation, help text, schema, and documentation. Maintain a machine-readable coverage matrix pinned to an exact Ratatui version. Classify each capability as supported, partial, or pending, with a test link.
 
+CLI names have two layers: short familiar flags inspired by fzf and Gum for
+common operations, and namespaced aliases matching the typed registry for
+advanced properties. For example, `--width` aliases `--viewport.width`, while
+`--selected-bg` aliases `--style.selected-bg`. Every declarative Ratatui
+property must either map to the registry or appear as pending in the coverage
+matrix; runtime callbacks and Rust generic types remain SDK concerns.
+
+Themes expose semantic tokens such as foreground, background, selection,
+border, title, and muted text. Components consume tokens rather than embedding
+colors. A preset supplies defaults, and explicit component flags override
+individual tokens without discarding the rest of the preset.
+
+Interactive components share one RAII terminal session. It owns raw mode,
+cursor visibility, bracketed paste, inline/fullscreen viewport creation, and
+alternate-screen cleanup. Component modules own only state transitions and
+rendering, so every new widget inherits the same stderr/stdout and restoration
+contracts instead of reimplementing terminal teardown.
+
+Form state remains independent from Ratatui frames. Confirmation represents
+affirmative, negative, and cancellation as distinct outcomes. Text input stores
+Unicode scalar positions, validation errors, and editing transitions without
+terminal handles, allowing the CLI, tests, and future SDK to share behavior.
+
+Registry introspection walks the compiled Clap command graph rather than
+maintaining a separate hand-written flag list. The resulting metadata drives
+JSON Schema and declarative property resolution. Declarative documents are
+translated into argv and parsed by Clap again before dispatch, preserving the
+same conflicts, requirements, enums, defaults, and component implementation as
+direct CLI use. Only interactive component commands are allowed through this
+path, preventing recursive registry/schema/run documents.
+
+Multi-step flows are a directed graph over those same declarative component
+documents. Before opening a terminal, the runtime validates IDs, component
+names, start and transition targets, branch compatibility, and the transition
+limit. At execution time it interpolates each step from a shared JSON context,
+then sends the resolved document through the registry-to-argv-to-Clap pipeline.
+Consequently a flow cannot bypass a component's normal type, conflict, enum,
+or validation contract.
+
+Every executed step stores its structured result under `steps.<id>`. A
+`save_as` alias also exposes that result under `variables.<alias>`. Conditions
+read these paths without mutation; exact `${...}` interpolation preserves JSON
+types, while embedded placeholders accept scalar values and produce text.
+Confirmation may route false through `next_on_false`; an unhandled false value
+terminates the flow as rejected. A maximum transition count makes intentional
+loops possible without allowing a malformed graph to run forever.
+
+The flow keeps two contexts: an internal context with real values for later
+steps and an output context used by the consolidated report. Sensitive step
+results are replaced with a redaction marker only in the output context. This
+prevents a secret from appearing in stdout while preserving useful in-memory
+composition. It does not make a secret safe if the author explicitly
+interpolates it into visible terminal copy or passes it to an external system.
+
 Native coverage targets: Paragraph/Text/Line/Span, Block, List, Table, BarChart, Chart/Dataset, Sparkline, Gauge/LineGauge, Canvas, Calendar, Scrollbar, Clear, Layout/Constraint/Flex/Rect, Style/Modifier/Color, viewports, and stateful rendering. Distinguish native Ratatui widgets from rodtui extensions.
 
 Literal Rust API parity cannot be expressed entirely through flags; functional parity uses schemas and SDK extension points.
@@ -55,6 +116,12 @@ Literal Rust API parity cannot be expressed entirely through flags; functional p
 Input events normalize to key, mouse, paste, resize, tick, and lifecycle messages. Components receive typed events, produce state changes and optional actions, and render from state. Stable IDs preserve focus and selection across rerenders.
 
 Menus support fuzzy search, descriptions, disabled entries, groups, nested submenus, breadcrumbs, back navigation, preview panes, keyboard shortcuts, and optional multiselect. Complex navigation must always expose a reliable Back/Cancel path.
+
+The implemented `choose` state keeps original input indices separate from the
+visible fuzzy-sorted order. Filtering uses `nucleo-matcher`; selected values
+remain stable across query changes and are emitted in original input order.
+The pure state owns navigation, query editing, limits, and acceptance while the
+terminal adapter only translates events and renders the current state.
 
 Forms support validation, errors, conditional fields, keyboard accessibility, and output typed by field ID. Avoid executing user actions during rendering.
 
@@ -88,6 +155,17 @@ Use TachyonFX as an adapter candidate, not an unremovable core dependency. Provi
 - Broken pipe: clean termination; cancellation propagates to workers.
 - Explicit noninteractive flags support CI and scripts.
 
+The `choose` implementation establishes exit `0` for accepted output, `1` for
+a no-match noninteractive selection, `2` for usage/runtime errors, and `130`
+for user cancellation. Its text, original-index, and JSON encoders are tested
+through the compiled binary with real stdin/stdout pipes.
+
+Flows write exactly one JSON report after the terminal session ends. Exit `0`
+means the graph completed, `1` represents a rejected confirmation or choose
+no-match, `2` represents invalid documents/components/runtime errors, and `130`
+represents cancellation. Component UI remains on the controlling terminal;
+partial step values are never streamed through stdout.
+
 Gum compatibility is tracked separately from Ratatui widget coverage, including argument aliases and exit behavior.
 
 ## 12. Security
@@ -118,7 +196,7 @@ All Rust source files must contain meaningful **English** comments. Public APIs 
 
 ## 16. Delivery protocol
 
-For every implementation block, publish a concise report: **Changed**, **Strategy**, **Tests executed**, **How to test** (copy-paste commands), **Known limitations**, **Next**. Update `docs/PROGRESS.md` and the README phase table. Never claim tests passed without actually running them. Use substantial coherent commits; intermediate commits may use `[skip ci]`, final delivery commits should trigger CI. Always provide relevant links to commits, checks, and previews when available.
+For every implementation block, publish a concise report: **Changed**, **Strategy**, **Tests executed**, **How to test** (copy-paste commands), **Known limitations**, **Next**. Update `docs/PROGRESS.md` and the README phase table. Never claim tests passed without actually running them. Deliver complete vertical features in large coherent chunks: input, state, UI, output, documentation, and integration tests belong in the same reviewable block whenever they form one user workflow. Avoid micro-commits and partial feature fragments. Intermediate commits may use `[skip ci]`; final delivery commits should trigger CI. Always provide relevant links to commits, checks, and previews when available.
 
 ## 17. Open design questions
 

@@ -11,5 +11,12 @@ repository = "https://github.com/rodkisten/rodtui"
 ratatui = "0.30.0"
 crossterm = "0.29"
 clap = { version = "4.5", features = ["derive"] }
+nucleo-matcher = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-width = "0.2"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs"] }
 
 [dev-dependencies]

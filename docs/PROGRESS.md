@@ -73,3 +73,135 @@ cargo run -- choose Production Staging --title Environment
 **Known limitations:** No checked-in Cargo.lock yet, no PTY integration tests, no fuzzy search, no public SDK, and no published release. The current UI requires interactive stdin and stderr. CI may identify compiler or formatting issues requiring a follow-up patch.
 
 **Next:** Fix any compiler/CI failures, commit a Cargo.lock, add TestBackend snapshots and PTY cleanup tests, then extract reusable public SDK APIs.
+
+## 2026-11-24 · Local baseline validation
+
+**Changed:** Added the generated `Cargo.lock` so local builds resolve a reproducible dependency set. Applied `rustfmt` formatting to `src/main.rs` and `src/choose.rs` after the format check found two layout differences.
+
+**Strategy:** Validate the checked-in command locally without relying on a workflow run. The interactive command was exercised through a pseudo-terminal, including arrow-key navigation, Enter selection, and the selected value on stdout.
+
+**Tests executed:** `cargo fmt --all -- --check` passed; `cargo test` passed (2 tests); `cargo clippy --all-targets -- -D warnings` passed; `cargo build --release` passed; pseudo-terminal interaction selected `Build` successfully. `./target/release/rodtui choose Deploy Build Test` outside a TTY returned the expected `choose requires an interactive terminal` error.
+
+**How to test:** Run `cargo run -- choose Deploy Build Test --title "Pick a task"` in a real terminal, use ↑/↓ or j/k, and press Enter. The selected item is written to stdout; the interface is rendered to stderr.
+
+**Known limitations:** The GitHub CI and release workflow files are present, but no workflow run or release was validated as part of this local check. The command currently requires stdin and stderr to be terminals; `/dev/tty` support and terminal cleanup integration tests remain future work.
+
+**Next:** Add deterministic Ratatui `TestBackend` rendering tests and a terminal cleanup integration test, then extract reusable public SDK APIs.
+
+## 2026-11-24 · Typed choose configuration and compact viewport
+
+**Changed:** Added the first typed component registry in `src/registry.rs` and moved `choose` arguments into it. The component now defaults to a content-sized inline viewport, with explicit `--fullscreen` support. Added configurable dimensions, placement, borders, padding, prompt, instruction visibility, initial selection, highlight spacing, and named/RGB/indexed colors. Advanced namespaced aliases mirror the typed registry.
+
+**Strategy:** Use one Rust type model as the source for Clap today and for schemas, documentation, and SDK types later. Map declarative values directly to Ratatui types while keeping terminal lifecycle and event handling inside the renderer. Preserve list state between frames so long lists retain their scroll offset.
+
+**Checks executed:** `cargo fmt --all -- --check`, `cargo check`, `cargo clippy --all-targets -- -D warnings`, `cargo build`, and CLI help generation completed successfully. A pseudo-terminal smoke selected `Build` in both modes and confirmed that compact mode stays inline while `--fullscreen` enters the alternate screen. Automated unit tests were not run in this block.
+
+**How to test:** Run `cargo run -- choose Deploy Build Test --title "Choose a task"` for the compact themed viewport. Add `--fullscreen` for the alternate screen. Run `cargo run -- choose --help` to inspect all supported flags and aliases.
+
+**Known limitations:** This is the first registry slice rather than the complete Ratatui coverage matrix. The inline renderer still reads keyboard events from stdin instead of a separate controlling TTY. Declarative YAML/JSON generation and Gum compatibility aliases remain pending.
+
+**Next:** Publish the branch for mobile terminal review, then add registry metadata/schema generation and extend the same model to `confirm` and `input`.
+
+## 2026-11-24 · Shared themes and responsive instructions
+
+**Changed:** Added reusable `rod`, `graphite`, `dracula`, `nord`, `gruvbox`, and `monochrome` theme presets to the typed registry. Explicit color flags now override semantic theme tokens individually. Added full, compact, minimal, hidden, and automatic instruction modes; automatic mode chooses copy from the resolved terminal width.
+
+**Strategy:** Keep theme values semantic so future components share a coherent palette without duplicating color constants. Preserve complete CLI control by resolving the preset first and applying explicit color flags afterward. Keep instruction density separate from viewport sizing so mobile terminals receive readable shortcuts automatically.
+
+**Checks executed:** `cargo fmt --all -- --check`, `cargo check`, strict Clippy, and CLI help generation completed successfully. A Clippy warning for a lazy boolean closure was corrected. A pseudo-terminal smoke confirmed Dracula RGB tokens, automatic minimal instructions at width 30, inline viewport behavior, and cancellation exit code 130.
+
+**How to test:** Run `cargo run -- choose Deploy Build Test --theme dracula`, then compare `--theme nord`, `--theme gruvbox`, and `--theme monochrome`. Use `--width 30` to see compact instruction copy and `--instruction-mode full` to force the complete line.
+
+**Known limitations:** Presets currently live in compiled registry data; user-defined theme files and configuration precedence are pending. Color capability detection and `NO_COLOR` support remain future work.
+
+**Next:** Add registry metadata and schema generation, then reuse theme and viewport contracts for `confirm` and `input`.
+
+## 2026-11-24 · Complete choose vertical slice
+
+**Changed:** Completed `choose` as an end-to-end shell feature. Candidates now combine positional arguments, repeatable files, and piped stdin with line or NUL delimiters and optional stable deduplication. Added live fuzzy search through `nucleo-matcher`, smart/sensitive/insensitive case modes, score sorting or preserved input order, initial queries, multiselection, selection limits, preselected original indices, responsive search UI, bracketed paste, resize handling, and empty-result rendering. Added text, original-index, and structured JSON stdout contracts, NUL output, noninteractive unique-match selection, clean broken-pipe behavior, and distinct success/no-match/error/cancel exit codes.
+
+**Strategy:** One pure `ChoiceState` owns original indices, visible fuzzy order, cursor, query, and stable selections. Terminal code translates Crossterm events into state transitions and renders Ratatui widgets; input collection and output encoding remain independent modules. This keeps CLI, future SDK, and declarative runtime behavior aligned while allowing deterministic tests without a terminal.
+
+On Unix, the Ratatui backend sends inline cursor-position queries through
+the controlling terminal. The PTY suite keeps both stdin and stdout piped,
+so it catches terminal escape bytes leaking into stdout as well as raw-mode
+or alternate-screen cleanup failures.
+
+**Tests executed:** Six state/input/output/terminal unit tests, five compiled-binary pipeline tests, and three pseudo-terminal tests passed. Coverage exercises arguments, files, line and NUL stdin, fuzzy unique matching, deduplication, JSON structure, original index output, no-match code `1`, invalid-input code `2`, inline multiselect, spaces inside fuzzy queries, fullscreen cancellation, terminal restoration, bracketed-paste cleanup, and clean stdout. Formatting, strict Clippy, release build, and the complete local suite passed before publication; CI runs the same locked checks and PTY harness.
+
+**How to test:** Run `printf 'Deploy\nBuild\nTest\n' | cargo run -- choose --filter --multi --output json`. Type `bu`, press Tab to mark, then Enter. For a noninteractive contract, run `printf 'Deploy\nBuild\nTest\n' | cargo run -- choose --filter --query bld --select-1 --output json`. See `docs/CHOOSE.md` for complete examples.
+
+**Known limitations:** Mouse selection, preview panes, disabled/grouped structured items, user theme files, shell completion generation, and Windows piped-stdin controlling-terminal behavior remain outside this `choose` baseline. The current JSON input surface is line-oriented strings; structured item metadata belongs to the registry/schema block.
+
+**Next:** Build `confirm` and `input` as one complete form-interaction vertical slice reusing terminal lifecycle, themes, viewports, stdout contracts, and integration harnesses.
+
+## 2026-11-25 · Complete confirm and input vertical slice
+
+**Changed:** Added themed `confirm` and Unicode-aware single-line `input` commands through the real CLI. Both support compact inline and explicit fullscreen surfaces, responsive instructions, every shared theme and semantic color override, borders, padding, placement, terminal cleanup, optional machine output, noninteractive automation, and distinct cancellation/error contracts. `confirm` includes configurable labels/default focus and direct y/n keys. `input` includes cursor editing, word/line shortcuts, bracketed paste, required/min/max/character-limit validation, password masking, stdin seeds, trimming control, text/JSON output, and inline validation errors. Empty piped `choose` input now exits quietly with no-match code `1`.
+
+**Strategy:** Extract terminal ownership from `choose` into one RAII session shared by all interactive components. Keep text editing and validation in a pure `InputState`; rendering translates that state into Ratatui widgets without owning business rules. Preserve shell conventions: confirmation uses exit `0` for yes and `1` for no, input returns accepted data on stdout, and all UI remains on stderr.
+
+**Tests executed:** The block adds two pure Unicode editing/validation tests, four compiled-binary form pipeline tests, and three controlling-terminal tests covering negative confirmation, validation recovery, fullscreen cancellation, terminal restoration, bracketed-paste cleanup, and stdout JSON. CI executes these beside the complete choose suite, strict Clippy, formatting, and locked release build.
+
+**How to test:** Run `rodtui confirm 'Deploy production?' --theme dracula --output json`. Run `rodtui input --title Release --placeholder v1.0.0 --required --min-length 3`. For a noninteractive pipeline run `printf 'release/next\n' | rodtui input --read-stdin --accept --required --output json`. See `docs/FORMS.md` for the complete contract.
+
+**Known limitations:** This slice intentionally remains single-line; multiline editing, history, shell completion, async validators, and external editor integration belong to future components. Password masking protects the terminal display, not shell history or downstream consumers.
+
+**Next:** Generate registry metadata and JSON Schema from the typed component definitions, then add declarative execution using the same contracts.
+
+## 2026-11-25 · Runtime registry, JSON Schema, and declarative execution
+
+**Changed:** Added `rodtui registry`, `rodtui schema`, and `rodtui run`. Registry output discovers `choose`, `confirm`, and `input` directly from the compiled Clap command graph and exposes flags, semantic dotted aliases, position/repetition, JSON types, enums, defaults, and help. Schema generation emits Draft 2020-12 component variants with strict argument objects. Declarative version-1 JSON documents translate canonical or dotted properties into argv, pass through Clap validation, and dispatch the existing component implementations. Added compact output, component filtering, stdin/file documents, dry-run argv inspection, three checked-in examples, full documentation, noninteractive CLI integration tests, and a real declarative confirmation PTY test.
+
+**Strategy:** Treat the executable CLI graph as the source of truth instead of duplicating component definitions in a second runtime. JSON translation is deliberately narrow and versioned: primitives and arrays become normal flags/positionals, unknown keys fail, and only interactive components can execute. Re-parsing resolved argv delegates conflicts, requirements, enum checks, and defaults back to Clap.
+
+**Tests executed:** The block adds three pure registry/translation tests, five compiled-binary registry/schema/declarative tests, and one controlling-terminal declarative test on top of the choose/forms suites. Coverage includes component discovery, enum/default/alias metadata, strict schemas, arrays, booleans, dotted layout aliases, dry runs, unsupported versions, unknown properties, stdin JSON, output preservation, exit-code preservation, and shared terminal cleanup.
+
+**How to test:** Run `cargo run -- registry --component choose`, `cargo run -- schema --component input`, `cargo run -- run --dry-run examples/input.json`, and `cargo run -- run examples/confirm.json`. See `docs/DECLARATIVE.md`.
+
+**Known limitations:** Version 1 accepts JSON only; YAML/TOML adapters, hosted schema publication, generated language SDKs, migrations, and arbitrary Ratatui widget trees remain future blocks. A document read from stdin consumes that stream, so stdin-backed component values should be embedded in the document or the document should be read from a file.
+
+**Next:** Add declarative multi-component flows with conditional transitions and shared variables while preserving the same registry and terminal contracts.
+
+## 2026-11-25 · Conditional multi-step flow runtime
+
+**Changed:** Added `rodtui flow` as a complete graph runtime over `choose`,
+`confirm`, and `input`. Versioned JSON flows now support initial variables,
+structured per-step results, `save_as` aliases, recursive typed interpolation,
+equality/inequality/existence/truthy conditions, explicit transitions,
+negative-confirmation branches, skipped-step records, sensitive result
+redaction, transition-cycle limits, dry-run planning, compact reports, and
+stable completed/rejected/no-match/cancelled exit semantics. Added interactive
+and automated release examples, pure runtime tests, compiled-binary contracts,
+a real two-screen PTY integration, CI coverage, architecture notes, and a full
+flow guide.
+
+**Strategy:** Model composition as a directed graph around existing component
+documents rather than adding another UI layer. Each interpolated step still
+passes through registry property resolution and Clap parsing before it calls
+the production component. Maintain separate internal and report contexts so
+sensitive values remain useful to later steps while stdout receives only a
+redaction marker. Validate the whole graph before terminal acquisition, and
+bound transitions so loops are supported without allowing infinite execution.
+
+**Tests executed:** The implementation adds three pure flow tests, six
+compiled-binary flow tests, and one controlling-terminal flow test. GitHub CI
+runs these together with all existing choose, forms, registry, schema, and
+declarative tests, strict Clippy, formatting, and the locked release build.
+
+**How to test:** Run `cargo run -- flow --dry-run
+examples/release-flow.json`, then `cargo run -- flow
+examples/automated-flow.json` for the noninteractive complete path. Finally run
+`cargo run -- flow examples/release-flow.json`, enter a release, choose an
+action, and verify both true and false confirmation routes. See
+`docs/FLOWS.md` for the complete contract.
+
+**Known limitations:** Version 1 remains JSON-only and supports the three
+implemented interactive components. Conditions are intentionally declarative
+rather than an arbitrary expression language. Dry-run shows the primary static
+route but cannot predict conditions or negative branches. Redaction protects
+the report, not a secret deliberately interpolated into visible UI copy.
+
+**Next:** Generate a first-class flow JSON Schema from the component registry,
+then add structured menu items and grouped/disabled choices as the next full
+component vertical slice.
