@@ -264,7 +264,9 @@ mod tests {
 
     fn args(arguments: &[&str]) -> crate::registry::ChooseArgs {
         let cli = Cli::try_parse_from(arguments).expect("valid test arguments");
-        let Commands::Choose(args) = cli.command;
+        let Commands::Choose(args) = cli.command else {
+            panic!("expected choose command")
+        };
         args
     }
 

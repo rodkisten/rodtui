@@ -82,7 +82,9 @@ mod tests {
     #[test]
     fn json_output_contains_query_indices_and_values() {
         let cli = Cli::try_parse_from(["rodtui", "choose", "--output", "json"]).expect("arguments");
-        let Commands::Choose(args) = cli.command;
+        let Commands::Choose(args) = cli.command else {
+            panic!("expected choose command")
+        };
         let outcome = ChoiceOutcome {
             query: "bu".into(),
             selected: vec![Choice {
