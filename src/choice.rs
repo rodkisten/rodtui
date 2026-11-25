@@ -32,6 +32,7 @@ pub struct ChoiceOutcome {
 pub struct ChoiceState {
     items: Vec<String>,
     visible: Vec<usize>,
+    match_indices: Vec<Vec<u32>>,
     cursor: usize,
     selected: BTreeSet<usize>,
     query: String,
@@ -67,6 +68,7 @@ impl ChoiceState {
         let filter_enabled = args.filter || args.query.is_some();
         let mut state = Self {
             visible: (0..items.len()).collect(),
+            match_indices: Vec::new(),
             cursor: args.initial.min(items.len().saturating_sub(1)),
             selected,
             query: args.query.clone().unwrap_or_default(),
@@ -89,6 +91,14 @@ impl ChoiceState {
     /// Return original indices in their current visible order.
     pub fn visible_indices(&self) -> &[usize] {
         &self.visible
+    }
+
+    /// Return the matched character indices for a visible row (for `hl` / `hl+` styling).
+    pub fn match_indices(&self, visible_index: usize) -> &[u32] {
+        self.match_indices
+            .get(visible_index)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// Return the current search query.
@@ -217,6 +227,7 @@ impl ChoiceState {
         let focused = self.current_original_index();
         if !self.filter_enabled || self.query.is_empty() {
             self.visible = (0..self.items.len()).collect();
+            self.match_indices.clear();
         } else {
             let case = match self.case {
                 CaseMode::Smart => CaseMatching::Smart,
@@ -228,20 +239,32 @@ impl ChoiceState {
             let mut scored = Vec::new();
             let mut buffer = Vec::new();
             for (index, item) in self.items.iter().enumerate() {
-                if let Some(score) =
-                    pattern.score(Utf32Str::new(item.as_str(), &mut buffer), &mut matcher)
-                {
-                    scored.push((index, score));
+                let mut indices = Vec::new();
+                if let Some(score) = pattern.indices(
+                    Utf32Str::new(item.as_str(), &mut buffer),
+                    &mut matcher,
+                    &mut indices,
+                ) {
+                    indices.sort_unstable();
+                    indices.dedup();
+                    scored.push((index, score, indices));
                 }
             }
             if self.sort_matches {
-                scored.sort_by(|(left_index, left_score), (right_index, right_score)| {
-                    right_score
-                        .cmp(left_score)
-                        .then_with(|| left_index.cmp(right_index))
-                });
+                scored.sort_by(
+                    |(left_index, left_score, _), (right_index, right_score, _)| {
+                        right_score
+                            .cmp(left_score)
+                            .then_with(|| left_index.cmp(right_index))
+                    },
+                );
             }
-            self.visible = scored.into_iter().map(|(index, _)| index).collect();
+            self.visible = Vec::with_capacity(scored.len());
+            self.match_indices = Vec::with_capacity(scored.len());
+            for (index, _, indices) in scored {
+                self.visible.push(index);
+                self.match_indices.push(indices);
+            }
         }
 
         self.cursor = focused
@@ -276,6 +299,7 @@ mod tests {
         let state = ChoiceState::new(vec!["Deploy".into(), "Build".into(), "Test".into()], &args)
             .expect("state");
         assert_eq!(state.visible_indices(), &[1]);
+        assert_eq!(state.match_indices(0), &[0, 3, 4]);
         assert_eq!(
             state.accept().expect("selection").selected[0].original_index,
             1
