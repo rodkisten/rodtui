@@ -290,6 +290,111 @@ pub struct InputArgs {
     pub style: ListStyleArgs,
 }
 
+/// Arguments accepted by the interactive data table component.
+#[derive(Debug, Clone, Args)]
+pub struct TableArgs {
+    /// Row strings split by `--delimiter`; piped stdin is appended.
+    #[arg(value_name = "ROW", num_args = 0..)]
+    pub rows: Vec<String>,
+
+    /// Read additional rows from a delimited file; repeat for multiple files.
+    #[arg(long, short = 'f', value_name = "PATH")]
+    pub input_file: Vec<PathBuf>,
+
+    /// Do not read rows from piped stdin.
+    #[arg(long)]
+    pub no_stdin: bool,
+
+    /// Column separator character (e.g. `,`, `\t`, `|`).
+    #[arg(long, short = 'd', default_value = ",")]
+    pub delimiter: String,
+
+    /// Explicit column headers separated by `--delimiter`; if omitted, first row is used.
+    #[arg(long)]
+    pub headers: Option<String>,
+
+    /// Explicit column widths in characters (comma-separated, e.g. `12,24,10`).
+    #[arg(long, value_delimiter = ',')]
+    pub widths: Vec<u16>,
+
+    /// Heading shown above the table.
+    #[arg(long, short, default_value = "Table")]
+    pub title: String,
+
+    /// Selection marker rendered before the active row.
+    #[arg(long, default_value = "❯ ")]
+    pub prompt: String,
+
+    /// Enable live fuzzy filtering across all columns while typing.
+    #[arg(long)]
+    pub filter: bool,
+
+    /// Initial fuzzy-filter query; implies --filter.
+    #[arg(long, short = 'q')]
+    pub query: Option<String>,
+
+    /// Fuzzy matching case behavior.
+    #[arg(long, default_value = "smart", visible_alias = "search.case")]
+    pub case: CaseMode,
+
+    /// Mark multiple rows with Tab; without filtering, Space also marks.
+    #[arg(long, short = 'm')]
+    pub multi: bool,
+
+    /// Maximum number of selected rows in multi-select mode.
+    #[arg(long, requires = "multi")]
+    pub limit: Option<usize>,
+
+    /// Hide column header row.
+    #[arg(long)]
+    pub no_header: bool,
+
+    /// Hide separator line below headers.
+    #[arg(long)]
+    pub no_separator: bool,
+
+    /// Machine-readable output contract.
+    #[arg(long, default_value = "text")]
+    pub output: TableOutput,
+
+    /// Custom instruction line; omitted means responsive built-in text.
+    #[arg(long)]
+    pub instruction: Option<String>,
+
+    /// Built-in instruction density.
+    #[arg(long, default_value = "auto", visible_alias = "instruction.mode")]
+    pub instruction_mode: InstructionMode,
+
+    /// Hide the instruction line.
+    #[arg(long)]
+    pub no_instructions: bool,
+
+    /// Reusable color preset; explicit color flags override its tokens.
+    #[arg(long, default_value = "rod", visible_alias = "style.theme")]
+    pub theme: ThemePreset,
+
+    #[command(flatten)]
+    pub viewport: ViewportArgs,
+
+    #[command(flatten)]
+    pub block: BlockArgs,
+
+    #[command(flatten)]
+    pub style: ListStyleArgs,
+}
+
+/// Stdout representation for accepted table rows.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum TableOutput {
+    #[default]
+    Text,
+    Json,
+    Csv,
+    Index,
+}
+
+
+
 /// Terminal viewport behavior. Inline mode is deliberately the default.
 #[derive(Debug, Clone, Args)]
 pub struct ViewportArgs {
