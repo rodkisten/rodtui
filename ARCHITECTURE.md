@@ -75,6 +75,12 @@ Input events normalize to key, mouse, paste, resize, tick, and lifecycle message
 
 Menus support fuzzy search, descriptions, disabled entries, groups, nested submenus, breadcrumbs, back navigation, preview panes, keyboard shortcuts, and optional multiselect. Complex navigation must always expose a reliable Back/Cancel path.
 
+The implemented `choose` state keeps original input indices separate from the
+visible fuzzy-sorted order. Filtering uses `nucleo-matcher`; selected values
+remain stable across query changes and are emitted in original input order.
+The pure state owns navigation, query editing, limits, and acceptance while the
+terminal adapter only translates events and renders the current state.
+
 Forms support validation, errors, conditional fields, keyboard accessibility, and output typed by field ID. Avoid executing user actions during rendering.
 
 ## 7. Layout and responsive design
@@ -107,6 +113,11 @@ Use TachyonFX as an adapter candidate, not an unremovable core dependency. Provi
 - Broken pipe: clean termination; cancellation propagates to workers.
 - Explicit noninteractive flags support CI and scripts.
 
+The `choose` implementation establishes exit `0` for accepted output, `1` for
+a no-match noninteractive selection, `2` for usage/runtime errors, and `130`
+for user cancellation. Its text, original-index, and JSON encoders are tested
+through the compiled binary with real stdin/stdout pipes.
+
 Gum compatibility is tracked separately from Ratatui widget coverage, including argument aliases and exit behavior.
 
 ## 12. Security
@@ -137,7 +148,7 @@ All Rust source files must contain meaningful **English** comments. Public APIs 
 
 ## 16. Delivery protocol
 
-For every implementation block, publish a concise report: **Changed**, **Strategy**, **Tests executed**, **How to test** (copy-paste commands), **Known limitations**, **Next**. Update `docs/PROGRESS.md` and the README phase table. Never claim tests passed without actually running them. Use substantial coherent commits; intermediate commits may use `[skip ci]`, final delivery commits should trigger CI. Always provide relevant links to commits, checks, and previews when available.
+For every implementation block, publish a concise report: **Changed**, **Strategy**, **Tests executed**, **How to test** (copy-paste commands), **Known limitations**, **Next**. Update `docs/PROGRESS.md` and the README phase table. Never claim tests passed without actually running them. Deliver complete vertical features in large coherent chunks: input, state, UI, output, documentation, and integration tests belong in the same reviewable block whenever they form one user workflow. Avoid micro-commits and partial feature fragments. Intermediate commits may use `[skip ci]`; final delivery commits should trigger CI. Always provide relevant links to commits, checks, and previews when available.
 
 ## 17. Open design questions
 

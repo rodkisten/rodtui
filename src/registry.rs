@@ -4,7 +4,7 @@
 //! these types today; schema and documentation generators can consume the same
 //! values later, which keeps the CLI, declarative files, and Rust SDK aligned.
 
-use std::{fmt, str::FromStr};
+use std::{fmt, path::PathBuf, str::FromStr};
 
 use clap::{Args, ValueEnum};
 use ratatui::{
@@ -15,9 +15,25 @@ use ratatui::{
 /// Arguments accepted by the `choose` component.
 #[derive(Debug, Clone, Args)]
 pub struct ChooseArgs {
-    /// Candidate values; quote an item if it contains spaces.
-    #[arg(required = true)]
+    /// Candidate values; piped stdin and input files are appended.
+    #[arg(value_name = "ITEM", num_args = 0..)]
     pub items: Vec<String>,
+
+    /// Read additional candidates from a text file; repeat for multiple files.
+    #[arg(long, short = 'f', value_name = "PATH")]
+    pub input_file: Vec<PathBuf>,
+
+    /// Do not read candidates from piped stdin.
+    #[arg(long)]
+    pub no_stdin: bool,
+
+    /// Split stdin and input files on NUL bytes instead of lines.
+    #[arg(long)]
+    pub read0: bool,
+
+    /// Remove duplicate candidates while preserving the first occurrence.
+    #[arg(long)]
+    pub dedupe: bool,
 
     /// Heading shown above the choices.
     #[arg(long, short, default_value = "Choose")]
@@ -26,6 +42,14 @@ pub struct ChooseArgs {
     /// Selection marker rendered before the active item.
     #[arg(long, default_value = "❯ ")]
     pub prompt: String,
+
+    /// Marker rendered beside selected items in multi-select mode.
+    #[arg(long, default_value = "● ", requires = "multi")]
+    pub selected_prefix: String,
+
+    /// Marker rendered beside unselected items in multi-select mode.
+    #[arg(long, default_value = "○ ", requires = "multi")]
+    pub unselected_prefix: String,
 
     /// Custom instruction line; omitted means responsive built-in text.
     #[arg(long)]
@@ -42,6 +66,46 @@ pub struct ChooseArgs {
     /// Zero-based item selected when the component opens.
     #[arg(long, default_value_t = 0)]
     pub initial: usize,
+
+    /// Enable live fuzzy filtering while typing.
+    #[arg(long)]
+    pub filter: bool,
+
+    /// Initial fuzzy-filter query; implies --filter.
+    #[arg(long, short = 'q')]
+    pub query: Option<String>,
+
+    /// Fuzzy matching case behavior.
+    #[arg(long, default_value = "smart", visible_alias = "search.case")]
+    pub case: CaseMode,
+
+    /// Preserve input order instead of sorting matches by fuzzy score.
+    #[arg(long)]
+    pub no_sort: bool,
+
+    /// Mark multiple choices with Tab; without filtering, Space also marks.
+    #[arg(long, short = 'm')]
+    pub multi: bool,
+
+    /// Maximum number of selected items in multi-select mode.
+    #[arg(long, requires = "multi")]
+    pub limit: Option<usize>,
+
+    /// Preselect an original zero-based item index; repeat as needed.
+    #[arg(long, value_name = "INDEX", requires = "multi")]
+    pub selected: Vec<usize>,
+
+    /// Accept automatically when filtering leaves exactly one match.
+    #[arg(long)]
+    pub select_1: bool,
+
+    /// Machine-readable output contract.
+    #[arg(long, default_value = "text")]
+    pub output: OutputFormat,
+
+    /// Terminate text/index output records with NUL instead of newline.
+    #[arg(long)]
+    pub print0: bool,
 
     /// Reusable color preset; explicit color flags override its tokens.
     #[arg(long, default_value = "rod", visible_alias = "style.theme")]
@@ -147,6 +211,24 @@ pub enum AxisPosition {
     #[default]
     Center,
     End,
+}
+
+/// Case matching behavior for fuzzy search.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum CaseMode {
+    #[default]
+    Smart,
+    Sensitive,
+    Insensitive,
+}
+
+/// Stable output formats intended for scripts and pipelines.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum OutputFormat {
+    #[default]
+    Text,
+    Json,
+    Index,
 }
 
 /// Instruction text density selected explicitly or from available width.

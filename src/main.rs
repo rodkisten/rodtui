@@ -3,12 +3,16 @@
 //! This first milestone implements a real, interactive `choose` command.
 //! Future milestones will move its reusable logic into the public SDK.
 
+mod choice;
 mod choose;
+mod input;
+mod output;
 mod registry;
+mod terminal_backend;
 
 use clap::{Parser, Subcommand};
 use registry::ChooseArgs;
-use std::io;
+use std::io::{self, Write};
 
 /// Clap turns these Rust types into validated CLI arguments and generated help.
 #[derive(Debug, Parser)]
@@ -26,31 +30,47 @@ struct Cli {
 /// Each enum variant represents one public subcommand.
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Choose one value from a list using arrow keys or j/k.
+    /// Choose one or more values from arguments, files, or piped stdin.
     Choose(ChooseArgs),
 }
 
 fn main() {
-    // Keep errors on stderr so stdout remains suitable for shell pipelines.
-    if let Err(error) = run() {
-        eprintln!("rodtui: {error}");
-        std::process::exit(1);
+    // Keep diagnostics on stderr and reserve stdout for selected data.
+    let exit_code = match run() {
+        Ok(exit_code) => exit_code,
+        Err(error) => {
+            eprintln!("rodtui: {error}");
+            2
+        }
+    };
+    if exit_code != 0 {
+        std::process::exit(exit_code);
     }
 }
 
-/// Parse the command, run it, and print only the chosen value to stdout.
-fn run() -> io::Result<()> {
+/// Parse the command and return its documented process exit code.
+fn run() -> io::Result<i32> {
     let cli = Cli::parse();
 
     match cli.command {
         Commands::Choose(args) => {
-            // A real terminal is required because the user navigates interactively.
-            let selection = choose::choose(&args)?;
-            match selection {
-                Some(index) => println!("{}", args.items[index]),
-                None => std::process::exit(130),
+            let items = input::collect_items(&args)?;
+            let state = choice::ChoiceState::new(items, &args)
+                .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
+            match choose::choose(&args, state)? {
+                choose::ChooseResult::Accepted(outcome) => {
+                    let stdout = io::stdout();
+                    let mut writer = stdout.lock();
+                    match output::write_outcome(&mut writer, &args, &outcome) {
+                        Ok(()) => writer.flush()?,
+                        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => return Ok(0),
+                        Err(error) => return Err(error),
+                    }
+                    Ok(0)
+                }
+                choose::ChooseResult::NoMatch => Ok(1),
+                choose::ChooseResult::Cancelled => Ok(130),
             }
         }
     }
-    Ok(())
 }

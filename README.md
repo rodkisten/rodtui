@@ -35,6 +35,22 @@ rodtui run dashboard.yaml
 rodtui playground
 ```
 
+## Working feature: `choose`
+
+`choose` now covers a complete shell-to-TUI-to-stdout workflow:
+
+```sh
+printf 'Deploy\nBuild\nTest\n' |
+  rodtui choose --filter --multi --output json --theme rod
+```
+
+It accepts positional items, repeatable files, line or NUL-delimited stdin,
+live fuzzy search powered by `nucleo-matcher`, stable multiselection, original
+indices, text/JSON output, deduplication, preselection, themes, responsive
+instructions, inline/fullscreen viewports, and noninteractive `--select-1`.
+See [the complete choose guide](docs/CHOOSE.md) for keys, contracts, exit codes,
+and pipeline examples.
+
 The default viewport is compact and inline, so a component occupies only the
 rows it needs and returns control to the surrounding shell. Fullscreen mode is
 explicit:
@@ -126,7 +142,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical specification: cra
 | --- | --- | --- | --- |
 | 0 · Foundation | Architecture, contributor rules, CI, release/install design | Reviewed docs and bootstrap checks | 🟡 In progress |
 | 1 · Kernel | Cargo workspace, Ratatui, Crossterm backend, terminal guards, test backend | Runnable CLI and terminal restoration tests | 🟡 In progress |
-| 2 · Gum baseline | choose, filter, input, confirm, write, table, style, spin, pager | Scriptable commands with contract tests | ⬜ Planned |
+| 2 · Gum baseline | choose, filter, input, confirm, write, table, style, spin, pager | Scriptable commands with contract tests | 🟡 In progress (`choose` vertical slice) |
 | 3 · Ratatui coverage | Native widgets, styles, constraints, viewports, state adapters | Versioned coverage matrix and snapshots | ⬜ Planned |
 | 4 · Interactive composition | Menus, tree, palettes, forms, focus, keyboard/mouse | Complex navigation demos | ⬜ Planned |
 | 5 · Data engine | JSON/JSONL/CSV, jq-like queries, streaming/windowing | Streaming correctness and bounded-memory tests | ⬜ Planned |
@@ -183,6 +199,7 @@ Never silently execute arbitrary shell commands from untrusted YAML/JSON. Action
 
 - [Architecture](ARCHITECTURE.md)
 - [Progress](docs/PROGRESS.md)
+- [`choose` guide](docs/CHOOSE.md)
 - [GitHub repository](https://github.com/rodkisten/rodtui)
 - [Releases](https://github.com/rodkisten/rodtui/releases)
 

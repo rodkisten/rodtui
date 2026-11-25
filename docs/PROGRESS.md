@@ -115,3 +115,22 @@ cargo run -- choose Production Staging --title Environment
 **Known limitations:** Presets currently live in compiled registry data; user-defined theme files and configuration precedence are pending. Color capability detection and `NO_COLOR` support remain future work.
 
 **Next:** Add registry metadata and schema generation, then reuse theme and viewport contracts for `confirm` and `input`.
+
+## 2026-11-24 · Complete choose vertical slice
+
+**Changed:** Completed `choose` as an end-to-end shell feature. Candidates now combine positional arguments, repeatable files, and piped stdin with line or NUL delimiters and optional stable deduplication. Added live fuzzy search through `nucleo-matcher`, smart/sensitive/insensitive case modes, score sorting or preserved input order, initial queries, multiselection, selection limits, preselected original indices, responsive search UI, bracketed paste, resize handling, and empty-result rendering. Added text, original-index, and structured JSON stdout contracts, NUL output, noninteractive unique-match selection, clean broken-pipe behavior, and distinct success/no-match/error/cancel exit codes.
+
+**Strategy:** One pure `ChoiceState` owns original indices, visible fuzzy order, cursor, query, and stable selections. Terminal code translates Crossterm events into state transitions and renders Ratatui widgets; input collection and output encoding remain independent modules. This keeps CLI, future SDK, and declarative runtime behavior aligned while allowing deterministic tests without a terminal.
+
+On Unix, the Ratatui backend sends inline cursor-position queries through
+the controlling terminal. The PTY suite keeps both stdin and stdout piped,
+so it catches terminal escape bytes leaking into stdout as well as raw-mode
+or alternate-screen cleanup failures.
+
+**Tests executed:** Four state/input/output unit tests, five compiled-binary pipeline tests, and three pseudo-terminal tests passed. Coverage exercises arguments, files, line and NUL stdin, fuzzy unique matching, deduplication, JSON structure, original index output, no-match code `1`, invalid-input code `2`, inline multiselect, spaces inside fuzzy queries, fullscreen cancellation, terminal restoration, bracketed-paste cleanup, and clean stdout. Formatting, strict Clippy, release build, and the complete local suite passed before publication; CI runs the same locked checks and PTY harness.
+
+**How to test:** Run `printf 'Deploy\nBuild\nTest\n' | cargo run -- choose --filter --multi --output json`. Type `bu`, press Tab to mark, then Enter. For a noninteractive contract, run `printf 'Deploy\nBuild\nTest\n' | cargo run -- choose --filter --query bld --select-1 --output json`. See `docs/CHOOSE.md` for complete examples.
+
+**Known limitations:** Mouse selection, preview panes, disabled/grouped structured items, user theme files, shell completion generation, and Windows piped-stdin controlling-terminal behavior remain outside this `choose` baseline. The current JSON input surface is line-oriented strings; structured item metadata belongs to the registry/schema block.
+
+**Next:** Build `confirm` and `input` as one complete form-interaction vertical slice reusing terminal lifecycle, themes, viewports, stdout contracts, and integration harnesses.
