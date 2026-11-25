@@ -5,13 +5,15 @@
 
 mod choice;
 mod choose;
+mod form;
 mod input;
 mod output;
 mod registry;
 mod terminal_backend;
+mod terminal_session;
 
 use clap::{Parser, Subcommand};
-use registry::ChooseArgs;
+use registry::{ChooseArgs, ConfirmArgs, ConfirmOutput, InputArgs, InputOutput};
 use std::io::{self, Write};
 
 /// Clap turns these Rust types into validated CLI arguments and generated help.
@@ -32,6 +34,10 @@ struct Cli {
 enum Commands {
     /// Choose one or more values from arguments, files, or piped stdin.
     Choose(ChooseArgs),
+    /// Ask a themed yes/no question with shell-friendly exit codes.
+    Confirm(ConfirmArgs),
+    /// Edit and validate one line of text.
+    Input(InputArgs),
 }
 
 fn main() {
@@ -55,6 +61,9 @@ fn run() -> io::Result<i32> {
     match cli.command {
         Commands::Choose(args) => {
             let items = input::collect_items(&args)?;
+            if items.is_empty() {
+                return Ok(1);
+            }
             let state = choice::ChoiceState::new(items, &args)
                 .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
             match choose::choose(&args, state)? {
@@ -72,5 +81,48 @@ fn run() -> io::Result<i32> {
                 choose::ChooseResult::Cancelled => Ok(130),
             }
         }
+        Commands::Confirm(args) => match form::confirm(&args)? {
+            form::FormResult::Accepted(value) => {
+                let rendered = match args.output {
+                    ConfirmOutput::None => None,
+                    ConfirmOutput::Text => Some(format!("{value}\n")),
+                    ConfirmOutput::Json => {
+                        Some(format!("{}\n", serde_json::json!({ "confirmed": value })))
+                    }
+                };
+                if let Some(rendered) = rendered {
+                    write_stdout(rendered.as_bytes())?;
+                }
+                Ok(if value { 0 } else { 1 })
+            }
+            form::FormResult::Cancelled => Ok(130),
+        },
+        Commands::Input(args) => {
+            let initial = form::initial_input(&args)?;
+            match form::input(&args, initial)? {
+                form::FormResult::Accepted(value) => {
+                    let rendered = match args.output {
+                        InputOutput::Text => format!("{value}\n"),
+                        InputOutput::Json => {
+                            format!("{}\n", serde_json::json!({ "value": value }))
+                        }
+                    };
+                    write_stdout(rendered.as_bytes())?;
+                    Ok(0)
+                }
+                form::FormResult::Cancelled => Ok(130),
+            }
+        }
+    }
+}
+
+/// Write a machine-readable result while treating a closed pipeline as success.
+fn write_stdout(bytes: &[u8]) -> io::Result<()> {
+    let stdout = io::stdout();
+    let mut writer = stdout.lock();
+    match writer.write_all(bytes).and_then(|()| writer.flush()) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        Err(error) => Err(error),
     }
 }

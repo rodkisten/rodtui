@@ -134,3 +134,17 @@ or alternate-screen cleanup failures.
 **Known limitations:** Mouse selection, preview panes, disabled/grouped structured items, user theme files, shell completion generation, and Windows piped-stdin controlling-terminal behavior remain outside this `choose` baseline. The current JSON input surface is line-oriented strings; structured item metadata belongs to the registry/schema block.
 
 **Next:** Build `confirm` and `input` as one complete form-interaction vertical slice reusing terminal lifecycle, themes, viewports, stdout contracts, and integration harnesses.
+
+## 2026-11-25 · Complete confirm and input vertical slice
+
+**Changed:** Added themed `confirm` and Unicode-aware single-line `input` commands through the real CLI. Both support compact inline and explicit fullscreen surfaces, responsive instructions, every shared theme and semantic color override, borders, padding, placement, terminal cleanup, optional machine output, noninteractive automation, and distinct cancellation/error contracts. `confirm` includes configurable labels/default focus and direct y/n keys. `input` includes cursor editing, word/line shortcuts, bracketed paste, required/min/max/character-limit validation, password masking, stdin seeds, trimming control, text/JSON output, and inline validation errors. Empty piped `choose` input now exits quietly with no-match code `1`.
+
+**Strategy:** Extract terminal ownership from `choose` into one RAII session shared by all interactive components. Keep text editing and validation in a pure `InputState`; rendering translates that state into Ratatui widgets without owning business rules. Preserve shell conventions: confirmation uses exit `0` for yes and `1` for no, input returns accepted data on stdout, and all UI remains on stderr.
+
+**Tests executed:** The block adds two pure Unicode editing/validation tests, four compiled-binary form pipeline tests, and three controlling-terminal tests covering negative confirmation, validation recovery, fullscreen cancellation, terminal restoration, bracketed-paste cleanup, and stdout JSON. CI executes these beside the complete choose suite, strict Clippy, formatting, and locked release build.
+
+**How to test:** Run `rodtui confirm 'Deploy production?' --theme dracula --output json`. Run `rodtui input --title Release --placeholder v1.0.0 --required --min-length 3`. For a noninteractive pipeline run `printf 'release/next\n' | rodtui input --read-stdin --accept --required --output json`. See `docs/FORMS.md` for the complete contract.
+
+**Known limitations:** This slice intentionally remains single-line; multiline editing, history, shell completion, async validators, and external editor integration belong to future components. Password masking protects the terminal display, not shell history or downstream consumers.
+
+**Next:** Generate registry metadata and JSON Schema from the typed component definitions, then add declarative execution using the same contracts.

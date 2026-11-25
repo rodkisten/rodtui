@@ -124,6 +124,152 @@ pub struct ChooseArgs {
     pub style: ListStyleArgs,
 }
 
+/// Arguments accepted by the binary yes/no confirmation component.
+#[derive(Debug, Clone, Args)]
+pub struct ConfirmArgs {
+    /// Question displayed inside the confirmation panel.
+    #[arg(value_name = "MESSAGE", default_value = "Continue?")]
+    pub message: String,
+
+    /// Label for the affirmative choice.
+    #[arg(long, default_value = "Yes")]
+    pub affirmative: String,
+
+    /// Label for the negative choice.
+    #[arg(long, default_value = "No")]
+    pub negative: String,
+
+    /// Choice focused when the component opens.
+    #[arg(long, default_value = "yes")]
+    pub default: ConfirmDefault,
+
+    /// Accept the affirmative choice without opening a terminal.
+    #[arg(long, conflicts_with = "no")]
+    pub yes: bool,
+
+    /// Accept the negative choice without opening a terminal.
+    #[arg(long, conflicts_with = "yes")]
+    pub no: bool,
+
+    /// Value written to stdout after a choice is accepted.
+    #[arg(long, default_value = "none")]
+    pub output: ConfirmOutput,
+
+    /// Heading shown above the question.
+    #[arg(long, short, default_value = "Confirm")]
+    pub title: String,
+
+    /// Custom instruction line; omitted means responsive built-in text.
+    #[arg(long)]
+    pub instruction: Option<String>,
+
+    /// Built-in instruction density.
+    #[arg(long, default_value = "auto", visible_alias = "instruction.mode")]
+    pub instruction_mode: InstructionMode,
+
+    /// Hide the instruction line.
+    #[arg(long)]
+    pub no_instructions: bool,
+
+    /// Reusable color preset; explicit color flags override its tokens.
+    #[arg(long, default_value = "rod", visible_alias = "style.theme")]
+    pub theme: ThemePreset,
+
+    #[command(flatten)]
+    pub viewport: ViewportArgs,
+
+    #[command(flatten)]
+    pub block: BlockArgs,
+
+    #[command(flatten)]
+    pub style: ListStyleArgs,
+}
+
+/// Arguments accepted by the single-line text input component.
+#[derive(Debug, Clone, Args)]
+pub struct InputArgs {
+    /// Heading shown above the field.
+    #[arg(long, short, default_value = "Input")]
+    pub title: String,
+
+    /// Prefix rendered before the editable value.
+    #[arg(long, default_value = "› ")]
+    pub prompt: String,
+
+    /// Muted text rendered while the value is empty.
+    #[arg(long)]
+    pub placeholder: Option<String>,
+
+    /// Initial value; use --read-stdin to seed it from a pipeline.
+    #[arg(long, short)]
+    pub value: Option<String>,
+
+    /// Read the initial value from piped stdin.
+    #[arg(long, conflicts_with = "value")]
+    pub read_stdin: bool,
+
+    /// Validate and emit the initial value without opening a terminal.
+    #[arg(long)]
+    pub accept: bool,
+
+    /// Reject an empty value.
+    #[arg(long)]
+    pub required: bool,
+
+    /// Minimum accepted number of Unicode characters.
+    #[arg(long, default_value_t = 0)]
+    pub min_length: usize,
+
+    /// Maximum accepted number of Unicode characters.
+    #[arg(long)]
+    pub max_length: Option<usize>,
+
+    /// Maximum editable number of Unicode characters.
+    #[arg(long)]
+    pub char_limit: Option<usize>,
+
+    /// Hide the entered value using --password-character.
+    #[arg(long)]
+    pub password: bool,
+
+    /// Character used to mask password input.
+    #[arg(long, default_value = "•", requires = "password")]
+    pub password_character: char,
+
+    /// Preserve leading and trailing whitespace in the accepted value.
+    #[arg(long)]
+    pub no_trim: bool,
+
+    /// Value written to stdout after acceptance.
+    #[arg(long, default_value = "text")]
+    pub output: InputOutput,
+
+    /// Custom instruction line; omitted means responsive built-in text.
+    #[arg(long)]
+    pub instruction: Option<String>,
+
+    /// Built-in instruction density.
+    #[arg(long, default_value = "auto", visible_alias = "instruction.mode")]
+    pub instruction_mode: InstructionMode,
+
+    /// Hide the instruction line.
+    #[arg(long)]
+    pub no_instructions: bool,
+
+    /// Reusable color preset; explicit color flags override its tokens.
+    #[arg(long, default_value = "rod", visible_alias = "style.theme")]
+    pub theme: ThemePreset,
+
+    #[command(flatten)]
+    pub viewport: ViewportArgs,
+
+    #[command(flatten)]
+    pub block: BlockArgs,
+
+    #[command(flatten)]
+    pub style: ListStyleArgs,
+}
+
 /// Terminal viewport behavior. Inline mode is deliberately the default.
 #[derive(Debug, Clone, Args)]
 pub struct ViewportArgs {
@@ -231,6 +377,31 @@ pub enum OutputFormat {
     Index,
 }
 
+/// Default focus for a confirmation.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum ConfirmDefault {
+    #[default]
+    Yes,
+    No,
+}
+
+/// Optional stdout representation for confirmations.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum ConfirmOutput {
+    #[default]
+    None,
+    Text,
+    Json,
+}
+
+/// Stdout representation for accepted text fields.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum InputOutput {
+    #[default]
+    Text,
+    Json,
+}
+
 /// Instruction text density selected explicitly or from available width.
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
 pub enum InstructionMode {
@@ -314,6 +485,37 @@ impl ThemePreset {
             },
         }
     }
+}
+
+/// Resolve a preset and apply the shared explicit color overrides.
+pub fn resolve_theme(
+    preset: ThemePreset,
+    style: &ListStyleArgs,
+    block: &BlockArgs,
+) -> ThemePalette {
+    let mut palette = preset.palette();
+    if let Some(color) = style.foreground {
+        palette.foreground = color.0;
+    }
+    if let Some(color) = style.background {
+        palette.background = color.0;
+    }
+    if let Some(color) = style.selected_fg {
+        palette.selected_foreground = color.0;
+    }
+    if let Some(color) = style.selected_bg {
+        palette.selected_background = color.0;
+    }
+    if let Some(color) = block.border_color {
+        palette.border = color.0;
+    }
+    if let Some(color) = block.title_color {
+        palette.title = color.0;
+    }
+    if let Some(color) = style.instruction_fg {
+        palette.muted = color.0;
+    }
+    palette
 }
 
 /// Semantic colors consumed by components after applying CLI overrides.

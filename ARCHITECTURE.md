@@ -65,6 +65,17 @@ border, title, and muted text. Components consume tokens rather than embedding
 colors. A preset supplies defaults, and explicit component flags override
 individual tokens without discarding the rest of the preset.
 
+Interactive components share one RAII terminal session. It owns raw mode,
+cursor visibility, bracketed paste, inline/fullscreen viewport creation, and
+alternate-screen cleanup. Component modules own only state transitions and
+rendering, so every new widget inherits the same stderr/stdout and restoration
+contracts instead of reimplementing terminal teardown.
+
+Form state remains independent from Ratatui frames. Confirmation represents
+affirmative, negative, and cancellation as distinct outcomes. Text input stores
+Unicode scalar positions, validation errors, and editing transitions without
+terminal handles, allowing the CLI, tests, and future SDK to share behavior.
+
 Native coverage targets: Paragraph/Text/Line/Span, Block, List, Table, BarChart, Chart/Dataset, Sparkline, Gauge/LineGauge, Canvas, Calendar, Scrollbar, Clear, Layout/Constraint/Flex/Rect, Style/Modifier/Color, viewports, and stateful rendering. Distinguish native Ratatui widgets from rodtui extensions.
 
 Literal Rust API parity cannot be expressed entirely through flags; functional parity uses schemas and SDK extension points.

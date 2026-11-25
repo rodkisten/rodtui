@@ -66,6 +66,20 @@ rodtui choose Deploy Build Test \
 rodtui choose Deploy Build Test --fullscreen
 ```
 
+The same terminal and theme contracts now cover complete form interactions:
+
+```sh
+if rodtui confirm 'Deploy production?' --theme dracula; then
+  ./deploy.sh
+fi
+
+release=$(rodtui input --title Release --placeholder v1.0.0 --required)
+```
+
+`confirm` provides yes/no exit semantics and optional text/JSON output. `input`
+provides Unicode cursor editing, validation, password masking, pipeline seeds,
+and noninteractive validation. See [the forms guide](docs/FORMS.md).
+
 Themes provide semantic tokens that can still be overridden flag by flag:
 
 ```sh

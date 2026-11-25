@@ -14,6 +14,7 @@ use crate::registry::ChooseArgs;
 /// Collect candidates from every configured source.
 pub fn collect_items(args: &ChooseArgs) -> io::Result<Vec<String>> {
     let mut items = args.items.clone();
+    let mut piped_stdin = false;
 
     for path in &args.input_file {
         let bytes = fs::read(path).map_err(|error| {
@@ -26,6 +27,7 @@ pub fn collect_items(args: &ChooseArgs) -> io::Result<Vec<String>> {
     }
 
     if !args.no_stdin && !io::stdin().is_terminal() {
+        piped_stdin = true;
         let mut bytes = Vec::new();
         io::stdin().read_to_end(&mut bytes)?;
         append_records(&mut items, &bytes, args.read0)?;
@@ -36,7 +38,7 @@ pub fn collect_items(args: &ChooseArgs) -> io::Result<Vec<String>> {
         items.retain(|item| seen.insert(item.clone()));
     }
 
-    if items.is_empty() {
+    if items.is_empty() && !piped_stdin {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "choose requires at least one item from arguments, files, or stdin",

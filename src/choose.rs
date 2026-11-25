@@ -3,34 +3,27 @@
 //! The pure `Selection` state is independent of the terminal, making it easy
 //! to test navigation without requiring a real TTY.
 
-use std::{
-    borrow::Cow,
-    io::{self, IsTerminal},
-};
+use std::{borrow::Cow, io};
 
 use crossterm::{
-    event::{
-        self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEventKind,
-        KeyModifiers,
-    },
-    execute,
-    terminal::{
-        disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen,
-    },
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    terminal::size,
 };
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Padding, Paragraph},
-    Frame, Terminal, TerminalOptions, Viewport,
+    Frame,
 };
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
     choice::{ChoiceOutcome, ChoiceState},
-    registry::{AxisPosition, ChooseArgs, InstructionMode, TextAlignment, ThemePalette},
-    terminal_backend::TerminalBackend,
+    registry::{
+        resolve_theme, AxisPosition, ChooseArgs, InstructionMode, TextAlignment, ThemePalette,
+    },
+    terminal_session::TerminalSession,
 };
 
 const FULL_INSTRUCTION: &str = "↑/↓ or j/k: navigate  •  Enter: select  •  Esc/q: cancel";
@@ -54,76 +47,6 @@ pub enum ChooseResult {
     Cancelled,
 }
 
-/// Own the terminal session so Drop restores it even if rendering fails.
-///
-/// Rust calls `drop` when the guard leaves scope, including when `?` returns
-/// early. This is the simplest form of RAII (resource acquisition is initialization).
-struct TerminalSession {
-    terminal: Terminal<TerminalBackend>,
-    alternate_screen: bool,
-}
-
-impl TerminalSession {
-    /// Enter raw mode and initialize either an inline or fullscreen terminal.
-    fn new(fullscreen: bool, inline_height: u16) -> io::Result<Self> {
-        enable_raw_mode()?;
-
-        if fullscreen {
-            if let Err(error) = execute!(io::stderr(), EnterAlternateScreen) {
-                let _ = disable_raw_mode();
-                return Err(error);
-            }
-        }
-
-        let backend = TerminalBackend::new();
-        let result = if fullscreen {
-            Terminal::new(backend)
-        } else {
-            Terminal::with_options(
-                backend,
-                TerminalOptions {
-                    viewport: Viewport::Inline(inline_height),
-                },
-            )
-        };
-
-        match result {
-            Ok(terminal) => {
-                if let Err(error) = execute!(io::stderr(), EnableBracketedPaste) {
-                    if fullscreen {
-                        let _ = execute!(io::stderr(), LeaveAlternateScreen);
-                    }
-                    let _ = disable_raw_mode();
-                    return Err(error);
-                }
-                Ok(Self {
-                    terminal,
-                    alternate_screen: fullscreen,
-                })
-            }
-            Err(error) => {
-                if fullscreen {
-                    let _ = execute!(io::stderr(), LeaveAlternateScreen);
-                }
-                let _ = disable_raw_mode();
-                Err(error)
-            }
-        }
-    }
-}
-
-impl Drop for TerminalSession {
-    /// Always attempt both cleanup operations, even if the first one fails.
-    fn drop(&mut self) {
-        let _ = self.terminal.show_cursor();
-        let _ = execute!(io::stderr(), DisableBracketedPaste);
-        if self.alternate_screen {
-            let _ = execute!(io::stderr(), LeaveAlternateScreen);
-        }
-        let _ = disable_raw_mode();
-    }
-}
-
 /// Run the complete choose interaction or accept a unique filtered match directly.
 pub fn choose(args: &ChooseArgs, state: ChoiceState) -> io::Result<ChooseResult> {
     if args.select_1 {
@@ -144,16 +67,14 @@ pub fn choose(args: &ChooseArgs, state: ChoiceState) -> io::Result<ChooseResult>
 fn interactive_choose(args: &ChooseArgs, mut state: ChoiceState) -> io::Result<ChooseResult> {
     // Piped stdin is already consumed before this point. Crossterm opens the
     // controlling terminal on Unix, while stderr remains the rendering target.
-    if !io::stderr().is_terminal() {
-        return Err(io::Error::other(
-            "interactive choose requires stderr connected to a terminal; use --select-1 for noninteractive selection",
-        ));
-    }
-
     let terminal_width = size().map(|(width, _)| width).unwrap_or(80);
     let mut geometry = Geometry::resolve(args, &state, terminal_width);
-    let theme = resolve_theme(args);
-    let mut session = TerminalSession::new(args.viewport.fullscreen, geometry.viewport_height)?;
+    let theme = resolve_theme(args.theme, &args.style, &args.block);
+    let mut session = TerminalSession::new(
+        args.viewport.fullscreen,
+        geometry.viewport_height,
+        "interactive choose requires stderr connected to a terminal; use --select-1 for noninteractive selection",
+    )?;
     let mut list_state = ListState::default().with_selected(selected_cursor(&state));
 
     loop {
@@ -460,33 +381,6 @@ fn render(
             chunks[1],
         );
     }
-}
-
-/// Merge a reusable preset with any explicit semantic color overrides.
-fn resolve_theme(args: &ChooseArgs) -> ThemePalette {
-    let mut palette = args.theme.palette();
-    if let Some(color) = args.style.foreground {
-        palette.foreground = color.0;
-    }
-    if let Some(color) = args.style.background {
-        palette.background = color.0;
-    }
-    if let Some(color) = args.style.selected_fg {
-        palette.selected_foreground = color.0;
-    }
-    if let Some(color) = args.style.selected_bg {
-        palette.selected_background = color.0;
-    }
-    if let Some(color) = args.block.border_color {
-        palette.border = color.0;
-    }
-    if let Some(color) = args.block.title_color {
-        palette.title = color.0;
-    }
-    if let Some(color) = args.style.instruction_fg {
-        palette.muted = color.0;
-    }
-    palette
 }
 
 /// Select instruction copy that fits the resolved component width.
