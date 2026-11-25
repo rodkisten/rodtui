@@ -155,7 +155,7 @@ pub fn run(args: &FlowArgs) -> io::Result<FlowExecution> {
             exit_code: 0,
             report: FlowReport {
                 version: FLOW_VERSION,
-                name: document.name,
+                name: document.name.clone(),
                 status: FlowStatus::Planned,
                 exit_code: 0,
                 order: plan_order(&document, &graph),

@@ -588,13 +588,13 @@ fn render(
     }
 }
 
-fn highlight_indexed_spans<'a>(
-    text: &'a str,
+fn highlight_indexed_spans(
+    text: &str,
     indices: &[u32],
     highlight_style: Style,
-) -> Vec<Span<'a>> {
+) -> Vec<Span<'static>> {
     if indices.is_empty() {
-        return vec![Span::raw(text)];
+        return vec![Span::raw(text.to_owned())];
     }
 
     let mut spans = Vec::new();
@@ -604,17 +604,20 @@ fn highlight_indexed_spans<'a>(
     for (char_idx, (byte_idx, ch)) in text.char_indices().enumerate() {
         if indices.get(next_match).copied() == Some(char_idx as u32) {
             if plain_start < byte_idx {
-                spans.push(Span::raw(&text[plain_start..byte_idx]));
+                spans.push(Span::raw(text[plain_start..byte_idx].to_owned()));
             }
             let next_byte = byte_idx + ch.len_utf8();
-            spans.push(Span::styled(&text[byte_idx..next_byte], highlight_style));
+            spans.push(Span::styled(
+                text[byte_idx..next_byte].to_owned(),
+                highlight_style,
+            ));
             plain_start = next_byte;
             next_match += 1;
         }
     }
 
     if plain_start < text.len() {
-        spans.push(Span::raw(&text[plain_start..]));
+        spans.push(Span::raw(text[plain_start..].to_owned()));
     }
 
     spans
